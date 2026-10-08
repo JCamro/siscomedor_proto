@@ -145,7 +145,7 @@ fun ConnectivityDialog(model: SisComeViewModel) {
 fun UnimplementedScreen(title: String, description: String) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
         PageTitle(title, "Área no implementada en este prototipo")
-        Notice("Sin integración real", description)
-        DemoNotice()
+        // La limitación específica basta aquí; el aviso global ya explica el entorno de demostración.
+        Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

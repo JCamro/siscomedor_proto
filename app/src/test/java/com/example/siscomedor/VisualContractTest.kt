@@ -93,8 +93,11 @@ class VisualContractTest {
     @Test fun closeControlIsIndependentOfScrollingDialogHeader() {
         val components = source("ui/components/Components.kt")
         assertTrue(components.contains("showTitle: Boolean = true"))
-        assertTrue(components.contains("Modifier.align(Alignment.TopEnd).padding(8.dp)"))
-        assertTrue(components.contains("padding(end = 52.dp)"))
+        val dialog = components.substringAfter("fun AppDialog(").substringBefore("fun EmptyState(")
+        assertTrue(dialog.contains("Row(Modifier.fillMaxWidth()"))
+        assertTrue(dialog.contains("Modifier.size(48.dp)"))
+        assertTrue(dialog.indexOf("IconButton(") < dialog.indexOf("verticalScroll("))
+        assertTrue(dialog.contains("weight(1f, fill = false)"))
     }
 
     @Test fun resultKeepsOperationScopeAndDoesNotDuplicateGenericHeader() {
@@ -104,5 +107,25 @@ class VisualContractTest {
         assertTrue(checkout.contains("Tickets emitidos correctamente"))
         assertTrue(checkout.contains("model.pickerTickets(operation.reference)"))
         assertFalse(checkout.contains("Cargo simulado confirmado"))
+    }
+
+    @Test fun everyOutcomeDisplaysFrozenOperationAmount() {
+        val result = source("ui/checkout/CheckoutDialog.kt").substringAfter("fun OperationResult(")
+        assertTrue(result.contains("Text(\"Importe de la operación\""))
+        assertTrue(result.contains("Text(price(operation.cents)"))
+        assertFalse(result.contains("model.records.lines.sumOf"))
+        assertTrue(result.indexOf("Text(price(operation.cents)") < result.indexOf("when {\n        operation.unresolved -> Button"))
+    }
+
+    @Test fun stateActionsStayInsideTheirExplanationAndSheetHasOneScrollOwner() {
+        val home = source("ui/home/HomeScreen.kt")
+        val owned = home.substringAfter("fun OwnedTicketNotice(").substringBefore("fun SaleClosedNotice(")
+        assertTrue(owned.contains("Surface("))
+        assertTrue(owned.contains("Column("))
+        assertTrue(owned.contains("OutlinedButton(onClick = onQr"))
+        assertFalse(home.contains("Text(\"REGISTRO\""))
+        val selection = source("ui/selection/SelectionUi.kt")
+        assertEquals(1, Regex("verticalScroll\\(").findAll(selection).count())
+        assertFalse(selection.contains("maxLineHeight"))
     }
 }

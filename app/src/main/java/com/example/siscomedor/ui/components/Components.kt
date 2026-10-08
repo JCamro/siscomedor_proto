@@ -84,15 +84,22 @@ fun PageTitle(title: String, description: String) {
 }
 
 @Composable
-fun Notice(title: String, message: String, pending: Boolean = false) {
+fun Notice(title: String, message: String, pending: Boolean = false, error: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit = {}) {
     // La región viva anuncia cambios sin quitar el foco; el texto explica el estado además del color.
-    Surface(color = if (pending) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.primaryContainer,
+    // Las acciones pertenecen al mismo bloque que su explicación, no a una fila aislada de la pantalla.
+    Surface(color = when {
+        error -> MaterialTheme.colorScheme.errorContainer
+        pending -> MaterialTheme.colorScheme.tertiaryContainer
+        else -> MaterialTheme.colorScheme.surfaceContainerHigh
+    },
         shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }) {
-        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             AppIcon(if (pending) "clock" else "info")
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.titleSmall)
                 Text(message, style = MaterialTheme.typography.bodyMedium)
+                content()
             }
         }
     }
@@ -206,21 +213,24 @@ fun AppDialog(title: String, onClose: () -> Unit, dismissible: Boolean = true, k
     )) {
         Surface(shape = RoundedCornerShape(24.dp), modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth()
             .padding(16.dp).safeDrawingPadding().semantics { paneTitle = title }) {
-            Box {
-                Column(Modifier.heightIn(max = 720.dp).verticalScroll(rememberScrollState()).padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    // El encabezado reserva ancho para la X; el texto puede crecer sin invadir su área táctil.
-                    if (showTitle) Column(Modifier.fillMaxWidth().padding(end = 52.dp).heightIn(min = 48.dp),
+            Column(Modifier.heightIn(max = 720.dp)) {
+                // Encabezado y cierre son hermanos del cuerpo: ningún contenido desplazado pasa debajo de la X.
+                Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (showTitle) Column(Modifier.weight(1f).heightIn(min = 48.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         kicker?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
                         Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-                    } else Spacer(Modifier.height(28.dp))
-                    content()
+                    } else Spacer(Modifier.weight(1f))
+                    IconButton(onClick = onClose, enabled = dismissible, modifier = Modifier.size(48.dp)) {
+                        AppIcon("close", description = "Cerrar $title")
+                    }
                 }
-                // La X queda fija arriba, independiente del título, subtítulo y desplazamiento interno.
-                IconButton(onClick = onClose, enabled = dismissible,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(48.dp)) {
-                    AppIcon("close", description = "Cerrar $title")
+                // El peso usa solo el alto restante de la ventana; fill=false conserva altura natural si hay poco contenido.
+                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
+                    .padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    content()
                 }
             }
         }

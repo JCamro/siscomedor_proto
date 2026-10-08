@@ -95,6 +95,25 @@ class DemoSessionTest {
         assertEquals(selectedWallet, session.operations.single().wallet)
     }
 
+    @Test fun everyOutcomeKeepsOriginalAmountAfterSelectionChanges() {
+        Scenario.entries.forEach { scenario ->
+            val session = DemoSession()
+            session.toggle(line())
+            session.toggle(line(service = Service.DINNER))
+            val operation = session.submit("DEMO-amount", session.lines, scenario)!!
+            session.toggle(line(date = "2026-10-09", service = Service.BREAKFAST))
+            assertEquals("Frozen amount for $scenario", 1550, operation.cents)
+            if (operation.unresolved) {
+                session.query(operation.reference)
+                assertEquals(1550, session.operations.single().cents)
+            }
+            if (scenario == Scenario.SOLD_OUT) {
+                session.recoverUnavailable(operation.reference)
+                assertEquals(1550, session.operations.single().cents)
+            }
+        }
+    }
+
     @Test fun soldOutRecoveryIsExplicitAndNeverCharges() {
         val session = DemoSession()
         session.toggle(line())

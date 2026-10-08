@@ -38,11 +38,14 @@ fun MyTicketsScreen(model: SisComeViewModel) {
             TicketSummaryCard("Disponibles", model.availableTickets.size, Modifier.weight(1f), true)
             TicketSummaryCard("Consumidos", model.records.tickets.count { it.status == TicketStatus.CONSUMED }, Modifier.weight(1f), false)
         }
-        TicketFilterBar(model.ticketFilter) { model.ticketFilter = it }
-        val filtered = model.records.tickets.filter { model.ticketFilter == null || it.status == model.ticketFilter }
-            .sortedWith(compareBy({ it.line.date }, { it.line.service.ordinal }))
-        if (filtered.isEmpty()) EmptyState("No hay tickets en este estado", "Prueba otro filtro. Estos registros no están sincronizados con una institución.")
-        filtered.forEach { TicketCard(it) { model.openTickets(it.id) } }
+        // Filtros y registros forman una sola región; el espacio entre regiones es mayor que entre filas.
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            TicketFilterBar(model.ticketFilter) { model.ticketFilter = it }
+            val filtered = model.records.tickets.filter { model.ticketFilter == null || it.status == model.ticketFilter }
+                .sortedWith(compareBy({ it.line.date }, { it.line.service.ordinal }))
+            if (filtered.isEmpty()) EmptyState("No hay tickets en este estado", "Prueba otro filtro. Estos registros no están sincronizados con una institución.")
+            filtered.forEach { TicketCard(it) { model.openTickets(it.id) } }
+        }
         Text("Los códigos guardados se pueden abrir y descargar sin conexión. No acreditan ingreso ni vigencia institucional.", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -51,10 +54,12 @@ fun MyTicketsScreen(model: SisComeViewModel) {
 @Composable
 private fun TicketSummaryCard(label: String, count: Int, modifier: Modifier, available: Boolean) {
     OutlinedCard(modifier, shape = MaterialTheme.shapes.medium) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            AppIcon(if (available) "ticket" else "check", tint = MaterialTheme.colorScheme.primary)
-            Text(count.toString(), style = MaterialTheme.typography.headlineSmall)
-            Text(label, style = MaterialTheme.typography.labelMedium)
+        Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            AppIcon(if (available) "ticket" else "check", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(count.toString(), style = MaterialTheme.typography.titleLarge)
+                Text(label, style = MaterialTheme.typography.labelMedium)
+            }
         }
     }
 }
@@ -73,20 +78,21 @@ fun TicketFilterBar(filter: TicketStatus?, onSelect: (TicketStatus?) -> Unit) {
 fun TicketCard(ticket: Ticket, onQr: () -> Unit) {
     // Un registro vencido o consumido conserva su historial, pero sustituye Ver QR por una consulta de solo lectura.
     OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                AppIcon("ticket", tint = MaterialTheme.colorScheme.primary)
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(ticket.line.service.label, style = MaterialTheme.typography.titleLarge)
                 StatusBadge(ticket.status.label, neutral = !ticket.canShowQr)
             }
-            Text(ticket.line.service.label, style = MaterialTheme.typography.titleLarge)
-            Text("${dateLabel(ticket.line.date)} · ${ticket.line.service.hours}", style = MaterialTheme.typography.bodyMedium)
-            Text(ticket.line.variant.name, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.small) {
-                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(ticket.id, style = MaterialTheme.typography.labelLarge)
-                    Text(DemoCatalog.student, style = MaterialTheme.typography.bodySmall)
-                    Text("Emisión: ${ticket.issuedAt}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("${dateLabel(ticket.line.date)} · ${ticket.line.service.hours}", style = MaterialTheme.typography.bodyMedium)
+                Text(ticket.line.variant.name, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            HorizontalDivider()
+            // La identidad secundaria usa proximidad y separador, no otra tarjeta dentro del registro.
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(ticket.id, style = MaterialTheme.typography.labelLarge)
+                Text(DemoCatalog.student, style = MaterialTheme.typography.bodySmall)
+                Text("Emisión: ${ticket.issuedAt}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (ticket.canShowQr) Button(onClick = onQr, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) { Text("Ver QR") }
             else {
@@ -110,8 +116,7 @@ fun TicketPickerDialog(model: SisComeViewModel, operationReference: String? = nu
                 Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("${ticket.line.service.label} · ${dateLabel(ticket.line.date)}")
                     Text(ticket.line.variant.name)
-                    Text(ticket.id, style = MaterialTheme.typography.labelMedium)
-                    Text(ticket.status.label, style = MaterialTheme.typography.labelMedium)
+                    Text("${ticket.id} · ${ticket.status.label}", style = MaterialTheme.typography.labelMedium)
                 }
             }
         }
@@ -147,15 +152,22 @@ fun TicketDetailDialog(ticket: Ticket, model: SisComeViewModel, operationReferen
                 Text(if (operationReference == null) "Todos los tickets disponibles" else "Tickets de esta operación")
             }
         }
-        operationReference?.let { Text("Operación: $it", style = MaterialTheme.typography.labelLarge) }
-        StatusBadge(ticket.status.label, neutral = !ticket.canShowQr)
-        Text("${dateLabel(ticket.line.date)} · ${ticket.line.service.hours}")
-        Text(ticket.line.variant.name, style = MaterialTheme.typography.titleMedium)
-        Text(DemoCatalog.student, style = MaterialTheme.typography.titleMedium)
-        Text(ticket.id)
+        // Contexto compacto antes del QR; la identidad y su invalidez acompañan el código, sin desplazar su foco.
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            operationReference?.let { Text("Operación: $it", style = MaterialTheme.typography.labelMedium) }
+            StatusBadge(ticket.status.label, neutral = !ticket.canShowQr)
+            Text("${dateLabel(ticket.line.date)} · ${ticket.line.service.hours}", style = MaterialTheme.typography.bodyMedium)
+            Text(ticket.line.variant.name, style = MaterialTheme.typography.titleMedium)
+        }
         if (ticket.canShowQr) {
             QrDisplay(ticket)
-            Text("Código de demostración sin validez institucional.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()) {
+                Text(DemoCatalog.student, style = MaterialTheme.typography.titleMedium)
+                Text(ticket.id, style = MaterialTheme.typography.labelMedium)
+                Text("Código de demostración sin validez institucional.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            HorizontalDivider()
             QrRefreshControls(ticket, model)
             Button(onClick = { exportId = ticket.id; exportMessage = "Guardando el código…"; export.launch("ticket-${ticket.id}.png") },
                 enabled = exportId == null, modifier = Modifier.fillMaxWidth()) {
@@ -164,6 +176,10 @@ fun TicketDetailDialog(ticket: Ticket, model: SisComeViewModel, operationReferen
                 Text("Descargar QR como PNG")
             }
         } else {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(DemoCatalog.student, style = MaterialTheme.typography.titleMedium)
+                Text(ticket.id, style = MaterialTheme.typography.labelMedium)
+            }
             Notice("Registro de solo lectura", "Ticket ${ticket.status.label.lowercase()}. No se muestra, recarga ni descarga un QR para usar. Este estado no libera el cupo ni inicia otro pago.")
         }
         exportMessage?.let { Notice("Exportación de código", it) }
@@ -187,17 +203,22 @@ fun QrRefreshControls(ticket: Ticket, model: SisComeViewModel) {
             "Consulta de demo completada. El identificador y el contenido del QR son los mismos."
         else -> "QR guardado en esta sesión; todavía no se consultó recientemente."
     }
-    Text(message, style = MaterialTheme.typography.bodySmall, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-    state.lastConsultedAt?.let { Text("Última consulta exitosa de demo: $it", style = MaterialTheme.typography.bodySmall) }
-    TextButton(onClick = { expanded = !expanded }) { Text("Opciones de demostración · ${if (expanded) "Ocultar" else "Mostrar"}") }
-    if (expanded) FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        QrRefreshFixture.entries.forEach { fixture ->
-            FilterChip(selected = model.qrFixture == fixture, onClick = { model.chooseQrFixture(fixture) },
-                enabled = !loading, label = { Text(fixture.label) })
+    // Estado, consulta anterior y acción se mantienen en un grupo; el QR guardado sigue fuera de la espera.
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(message, style = MaterialTheme.typography.bodySmall, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+            state.lastConsultedAt?.let { Text("Última consulta exitosa de demo: $it", style = MaterialTheme.typography.bodySmall) }
         }
-    }
-    OutlinedButton(onClick = { model.refreshQr(ticket.id) }, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
-        Text(if (loading) "Consultando mismo QR…" else "Recargar mismo QR")
+        OutlinedButton(onClick = { model.refreshQr(ticket.id) }, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
+            Text(if (loading) "Consultando mismo QR…" else "Recargar mismo QR")
+        }
+        TextButton(onClick = { expanded = !expanded }) { Text("Opciones de demostración · ${if (expanded) "Ocultar" else "Mostrar"}") }
+        if (expanded) FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            QrRefreshFixture.entries.forEach { fixture ->
+                FilterChip(selected = model.qrFixture == fixture, onClick = { model.chooseQrFixture(fixture) },
+                    enabled = !loading, label = { Text(fixture.label) })
+            }
+        }
     }
 }
 
