@@ -6,6 +6,8 @@ This document maps the existing SisCome prototype into Android UI modules using 
 
 > **Bounded correction update:** Native menu cards now load the original illustrative Unsplash photos with explicit loading/error states. Checkout recovery is limited to the exact operation's ticket keys, including expired read-only detail without QR/export. Available-ticket QR refresh has local success/failure/offline fixtures that preserve identity/content and distinguish saved codes from a successful demo consultation. External-photo/offline limits and device validation remain open. Publication-price-change/suspension fixtures and broader account/wallet integrations remain unimplemented; this guide is not a claim of complete `FINALIDAD.md` coverage.
 
+> **Recent UI correction:** Home's recent-activity summary presents issued ticket records and routes to My Tickets; operation history remains separate in Payments. Checkout and the selection sheet share selectable masked demo wallet accounts, with the chosen label frozen into each operation. These are local fixtures, not wallet integrations.
+
 ## Quick path
 
 1. Prepare the Android app module for Kotlin + Jetpack Compose and Material 3. The current Gradle module uses AppCompat and Material Views and does not yet declare Compose dependencies.

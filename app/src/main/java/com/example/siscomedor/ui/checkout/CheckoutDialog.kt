@@ -1,11 +1,16 @@
 package com.example.siscomedor.ui.checkout
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.example.siscomedor.domain.*
@@ -15,24 +20,45 @@ import com.example.siscomedor.ui.selection.SelectionLineRow
 
 @Composable
 fun CheckoutDialog(model: SisComeViewModel) {
-    AppDialog("Operación simulada", model::closeOverlay, dismissible = !model.processing) {
+    // El diálogo observa el ViewModel: revisar, procesar y mostrar resultado son estados, no pantallas duplicadas.
+    val result = model.result
+    val resultTitle = result?.let {
         when {
-            model.processing -> OperationProgress(model.stage, model.querying)
-            model.result != null -> OperationResult(model.result!!, model)
+            it.payment == PaymentStatus.UNKNOWN -> "Pago por verificar"
+            it.unresolved -> "Emisión pendiente"
+            it.payment == PaymentStatus.REJECTED -> "Pago rechazado"
+            it.payment == PaymentStatus.NOT_STARTED -> "Menú agotado"
+            else -> if (it.lines.size == 1) "Ticket emitido correctamente" else "Tickets emitidos correctamente"
+        }
+    }
+    AppDialog(if (model.processing) "Operación en curso" else resultTitle ?: "Revisa antes de confirmar",
+        model::closeOverlay, dismissible = !model.processing,
+        kicker = if (model.processing || result != null) null else "Confirmación de pago",
+        showTitle = result == null) {
+        when {
+            model.processing -> OperationProgress(model.stage, model.querying,
+                model.review?.lines?.sumOf { it.cents } ?: 0, model.review?.lines?.size ?: 0)
+            model.result != null -> ContentArrival(model.result!!.reference to model.result!!.payment) { OperationResult(model.result!!, model) }
             else -> {
-                Text("Revisa antes de confirmar", style = MaterialTheme.typography.titleLarge)
-                Text("Un solo pago simulado para toda la selección. El pago y la emisión se verifican por separado.")
+                Text("Una operación para toda la selección. Pago y emisión se comprueban por separado.", style = MaterialTheme.typography.bodyMedium)
                 model.review?.let { review ->
-                    Text("Nueva operación: ${review.reference}", style = MaterialTheme.typography.labelLarge)
+                    Text("Nueva operación: ${review.reference}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     review.lines.forEach { SelectionLineRow(it, false) }
-                    WalletSummary()
-                    Text("Total: ${price(review.lines.sumOf { it.cents })}", style = MaterialTheme.typography.titleLarge)
+                    WalletSummary(model.selectedWallet, model::selectWallet)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Total", style = MaterialTheme.typography.titleMedium)
+                        Text(price(review.lines.sumOf { it.cents }), style = MaterialTheme.typography.headlineSmall)
+                    }
                 }
                 DemoScenarioPicker(model.scenario, model::chooseScenario)
                 model.notice?.let { Notice("No se inició el pago", it) }
+                Text("No se realizará ningún cargo real.", style = MaterialTheme.typography.bodySmall)
                 Button(onClick = model::confirm, enabled = model.connection == Connection.ONLINE,
-                    modifier = Modifier.fillMaxWidth()) { Text("Confirmar pago simulado") }
-                Text("No se mueve dinero real. SisCome no solicita PIN, contraseñas ni códigos de tu billetera.", style = MaterialTheme.typography.bodySmall)
+                    modifier = Modifier.fillMaxWidth()) {
+                    Text("Confirmar pago")
+                    Spacer(Modifier.width(8.dp))
+                    AppIcon("arrow")
+                }
             }
         }
     }
@@ -40,44 +66,110 @@ fun CheckoutDialog(model: SisComeViewModel) {
 
 @Composable
 fun DemoScenarioPicker(selected: Scenario, onSelect: (Scenario) -> Unit) {
+    // rememberSaveable conserva solo la expansión al recrear la Activity; el escenario financiero vive en el ViewModel.
+    var expanded by rememberSaveable { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Escenario de demostración", style = MaterialTheme.typography.titleSmall)
-        Scenario.entries.forEach { scenario ->
-            FilterChip(selected = selected == scenario, onClick = { onSelect(scenario) }, label = { Text(scenario.label) })
+        TextButton(onClick = { expanded = !expanded }) { Text("Opciones de demostración · ${if (expanded) "Ocultar" else "Mostrar"}") }
+        if (expanded) {
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Scenario.entries.forEach { scenario ->
+                    FilterChip(selected = selected == scenario, onClick = { onSelect(scenario) }, label = { Text(scenario.label, style = MaterialTheme.typography.labelMedium) })
+                }
+            }
+            Text("${selected.label}: ${selected.hint}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text(selected.hint, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
 @Composable
-fun OperationProgress(stage: Int, querying: Boolean) {
-    val labels = if (querying) listOf("Consultando la misma referencia", "Sin iniciar un segundo pago", "Comprobando emisión de la selección original")
-        else listOf("Verificando menú, precio y disponibilidad", "Procesando pago simulado", "Comprobando emisión de tickets")
+fun OperationProgress(stage: Int, querying: Boolean, cents: Int, ticketCount: Int) {
+    // Una consulta no repite el pago: muestra un paso propio. La barra cuenta etapas terminadas, no tiempo inventado.
+    val labels = if (querying) listOf("Consultando la misma operación")
+        else listOf("Verificando menú y disponibilidad", "Procesando pago", "Emitiendo tickets")
+    val completed by animateFloatAsState(if (querying) 0f else ((stage - 1).coerceAtLeast(0) / 3f), tween(300), label = "Completed stages")
     Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
-        Text(if (querying) "Consulta en curso" else "Operación en curso", style = MaterialTheme.typography.titleLarge)
-        labels.forEachIndexed { index, label -> Text("${index + 1}. $label${if (index + 1 == stage) " · En curso" else if (index + 1 < stage) " · Completado" else ""}") }
-        Text("Espera el resultado. La confirmación duplicada está bloqueada.", style = MaterialTheme.typography.bodyMedium)
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(64.dp), contentAlignment = Alignment.Center) {
+                if (motionEnabled()) CircularProgressIndicator(Modifier.fillMaxSize(), strokeWidth = 3.dp)
+                else CircularProgressIndicator(progress = { 0.75f }, modifier = Modifier.fillMaxSize(), strokeWidth = 3.dp)
+                AppIcon(if (querying) "clock" else if (stage == 3) "ticket" else if (stage == 2) "wallet" else "utensils", tint = MaterialTheme.colorScheme.primary)
+            }
+        }
+        Text(if (querying) "Consulta de la referencia original" else "${price(cents)} · $ticketCount ${if (ticketCount == 1) "ticket" else "tickets"}",
+            Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        if (!querying) LinearProgressIndicator(progress = { completed }, modifier = Modifier.fillMaxWidth())
+        labels.forEachIndexed { index, label ->
+            val done = !querying && index + 1 < stage
+            val current = querying || index + 1 == stage
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Surface(shape = MaterialTheme.shapes.extraSmall,
+                    color = if (done || current) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh) {
+                    Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                        if (done) AppIcon("check") else Text((index + 1).toString(), style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(label, style = if (current) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
+                        color = if (current || done) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (done) "Completado" else if (current) "En curso" else "Por iniciar", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+        Text(if (querying) "Misma referencia, selección original. No se inicia un segundo pago." else "Espera el resultado antes de continuar.", style = MaterialTheme.typography.bodySmall)
     }
 }
 
 @Composable
 fun OperationResult(operation: PaymentOperation, model: SisComeViewModel) {
-    Text(operation.payment.label, style = MaterialTheme.typography.headlineSmall)
-    Text(operation.issuance.label, style = MaterialTheme.typography.titleMedium)
-    Text("${operation.reference} · ${price(operation.cents)}", style = MaterialTheme.typography.titleSmall)
+    // El resultado reemplaza el encabezado genérico; los estados inciertos mantienen sus instrucciones de recuperación.
+    val failed = operation.payment == PaymentStatus.REJECTED || operation.payment == PaymentStatus.NOT_STARTED
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Surface(color = if (failed) MaterialTheme.colorScheme.errorContainer else if (operation.unresolved) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.primaryContainer,
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(50)) {
+            Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) { AppIcon(if (failed) "close" else if (operation.unresolved) "clock" else "check") }
+        }
+    }
+    Text(when {
+        operation.payment == PaymentStatus.UNKNOWN -> "SIN CARGO CONFIRMADO"
+        operation.unresolved -> "PAGO CONFIRMADO · EMISIÓN PENDIENTE"
+        failed -> "SIN CARGO"
+        else -> "RESULTADO CONFIRMADO"
+    }, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+    Text(when {
+        operation.payment == PaymentStatus.UNKNOWN -> "Pago por verificar"
+        operation.unresolved -> "Emisión pendiente"
+        operation.payment == PaymentStatus.REJECTED -> "Pago rechazado"
+        operation.payment == PaymentStatus.NOT_STARTED -> "Menú agotado"
+        operation.lines.size == 1 -> "Ticket emitido correctamente"
+        else -> "Tickets emitidos correctamente"
+    }, modifier = Modifier.fillMaxWidth().semantics { heading() }, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        style = MaterialTheme.typography.titleLarge)
     val message = when {
         operation.unresolved && operation.payment == PaymentStatus.UNKNOWN ->
-            "No se confirmó si hubo cargo. No se emitieron tickets. Tu selección se conserva. Consulta esta misma referencia; no vuelvas a pagar."
+            "No se sabe si hubo cargo y no se emitieron tickets. Se conserva la selección; consulta esta misma referencia antes de intentar otro pago."
         operation.unresolved ->
-            "El cargo simulado está confirmado, pero los tickets siguen pendientes de emisión. Tu selección se conserva. Consulta la emisión con la misma referencia; no pagues otra vez."
+            "Pago confirmado; emisión pendiente. Selección conservada. Consulta la emisión con la misma referencia; no pagues otra vez."
         operation.payment == PaymentStatus.REJECTED ->
-            "No hubo cargo y no se emitieron tickets. Tu selección se conserva. Esta demo permite revisar un nuevo intento con una referencia nueva; no representa una política institucional."
+            "No hubo cargo ni se emitieron tickets. Se conserva la selección; puedes revisar un nuevo intento de demostración."
         operation.payment == PaymentStatus.NOT_STARTED ->
-            "Un menú se agotó antes del pago. No hubo cargo ni emisión. La selección se conserva hasta que elijas quitar la línea afectada y revisar las demás."
+            "Sin cargo ni emisión. Selección conservada hasta que quites la línea agotada. Revisa los demás servicios antes de una nueva operación."
         else ->
-            "Cargo simulado confirmado y ${operation.lines.size} tickets emitidos. Las líneas emitidas se quitaron de la selección; las demás se conservan. Consulta los registros de esta misma operación y su estado de uso. No se inicia otro pago."
+            "Pago confirmado por ${price(operation.cents)}. Los servicios emitidos se retiraron de tu selección; los demás se conservan."
     }
-    Notice("Resultado de esta operación", message, pending = operation.unresolved)
+    Text(message, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite })
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.small) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Referencia: ${operation.reference}", style = MaterialTheme.typography.labelLarge,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            // La referencia limita los identificadores y la acción a esta operación, incluso en consultas históricas.
+            if (operation.issuance == IssuanceStatus.COMPLETED) {
+                Text(model.pickerTickets(operation.reference).joinToString(" · ") { it.id }, style = MaterialTheme.typography.bodySmall,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
+        }
+    }
     when {
         operation.unresolved -> Button(onClick = { model.query(operation.reference) }, enabled = model.connection == Connection.ONLINE,
             modifier = Modifier.fillMaxWidth()) { Text(if (operation.payment == PaymentStatus.CONFIRMED) "Consultar emisión" else "Consultar esta operación") }
@@ -90,7 +182,7 @@ fun OperationResult(operation: PaymentOperation, model: SisComeViewModel) {
             Button(onClick = model::recoverUnavailable, modifier = Modifier.fillMaxWidth()) { Text("Quitar y revisar selección") }
         }
         else -> Button(onClick = { model.openOperationTickets(operation.reference) }, modifier = Modifier.fillMaxWidth()) {
-            Text("Ver tickets de esta operación")
+            Text("Ver mis tickets")
         }
     }
 }

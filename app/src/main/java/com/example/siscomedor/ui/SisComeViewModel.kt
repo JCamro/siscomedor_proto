@@ -26,6 +26,7 @@ enum class Connection(val label: String) {
 enum class ConnectionFixture(val label: String) {
     NORMAL("Normal"), SLOW("Carga lenta"), OFFLINE("Sin conexión"), SERVER("Error del servidor")
 }
+// sealed representa todas las superposiciones posibles; abrir un detalle no cambia el destino de navegación.
 sealed interface Overlay {
     data object Selection : Overlay
     data object Checkout : Overlay
@@ -42,6 +43,8 @@ fun ticketOverlay(ticketIds: List<String>, operationReference: String? = null): 
     else Overlay.TicketPicker(operationReference)
 
 class SisComeViewModel(application: Application) : AndroidViewModel(application) {
+    // mutableStateOf publica cambios a Compose. El ViewModel sobrevive a rotación, pero no a muerte del proceso.
+    // DemoSession es la autoridad; records es una instantánea de lectura compartida por todas las pantallas.
     private val session = DemoSession(includePaymentHistory = true)
     var records by mutableStateOf(SessionRecords(session.lines, session.tickets, session.operations))
         private set
@@ -60,6 +63,8 @@ class SisComeViewModel(application: Application) : AndroidViewModel(application)
     var fixture by mutableStateOf(ConnectionFixture.NORMAL)
         private set
     var scenario by mutableStateOf(Scenario.SUCCESS)
+        private set
+    var selectedWallet by mutableStateOf(DemoCatalog.wallet)
         private set
     var review by mutableStateOf<CheckoutReview?>(null)
         private set
@@ -98,6 +103,7 @@ class SisComeViewModel(application: Application) : AndroidViewModel(application)
     private fun hasNetwork(): Boolean = networkManager.getNetworkCapabilities(networkManager.activeNetwork)
         ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
 
+    // Los callbacks de red pueden venir de otro hilo; viewModelScope lleva las actualizaciones al hilo principal.
     private fun updateNetwork() {
         viewModelScope.launch {
             networkAvailable = hasNetwork()
@@ -110,7 +116,7 @@ class SisComeViewModel(application: Application) : AndroidViewModel(application)
 
     fun connect(target: ConnectionFixture) {
         fixture = target
-        connectionJob?.cancel()
+        connectionJob?.cancel() // Cancelar la consulta anterior evita que una respuesta tardía sobrescriba el estado nuevo.
         connection = Connection.LOADING
         connectionJob = viewModelScope.launch {
             delay(if (target == ConnectionFixture.SLOW) 3200 else 1100)
@@ -133,6 +139,7 @@ class SisComeViewModel(application: Application) : AndroidViewModel(application)
         if (!processing) overlay = target
     }
 
+    // La misma guarda protege X, Back y toque exterior durante el pago; no se abandona una operación en curso.
     fun closeOverlay() {
         if (!processing) overlay = null
     }
@@ -147,6 +154,7 @@ class SisComeViewModel(application: Application) : AndroidViewModel(application)
         loadMenu()
     }
 
+    // La espera pertenece a la demostración. Cancelar el Job anterior impide ocultar antes de tiempo el esqueleto nuevo.
     private fun loadMenu() {
         menuJob?.cancel()
         menuLoading = true
@@ -175,6 +183,7 @@ class SisComeViewModel(application: Application) : AndroidViewModel(application)
 
     fun beginCheckout() {
         if (!canCheckout) return
+        // Una referencia nueva y una copia de líneas fijan exactamente lo que se revisará antes de confirmar.
         review = CheckoutReview("DEMO-${referenceSequence++}", records.lines.toList())
         result = null
         stage = 0
@@ -187,6 +196,11 @@ class SisComeViewModel(application: Application) : AndroidViewModel(application)
         if (!processing && result == null) scenario = value
     }
 
+    // Mientras processing es true, la billetera queda congelada para la operación que está ejecutándose.
+    fun selectWallet(value: String) {
+        if (!processing && value in DemoCatalog.wallets) selectedWallet = value
+    }
+
     fun confirm() {
         val frozen = review ?: return
         if (processing || result != null) return
@@ -197,6 +211,7 @@ class SisComeViewModel(application: Application) : AndroidViewModel(application)
         val selectedScenario = scenario
         processing = true
         querying = false
+        // viewModelScope cancela sus corutinas al destruir el ViewModel; delay suspende sin bloquear la interfaz.
         viewModelScope.launch {
             stage = 1
             delay(900)
@@ -214,13 +229,15 @@ class SisComeViewModel(application: Application) : AndroidViewModel(application)
                     delay(900)
                 }
             }
+            // Si se pierde conexión después de iniciar el pago, el resultado es incierto, no un rechazo inventado.
             result = session.submit(frozen.reference, frozen.lines,
-                if (connection == Connection.ONLINE) selectedScenario else Scenario.UNKNOWN)
+                if (connection == Connection.ONLINE) selectedScenario else Scenario.UNKNOWN, selectedWallet)
             refresh()
             processing = false
         }
     }
 
+    // Consultar toma líneas y referencia almacenadas: nunca inicia otro cobro ni usa la selección posterior.
     fun query(reference: String) {
         val operation = records.operations.firstOrNull { it.reference == reference } ?: return
         if (processing || connection != Connection.ONLINE || !operation.unresolved) return
@@ -275,6 +292,7 @@ class SisComeViewModel(application: Application) : AndroidViewModel(application)
         if (!ticket.canShowQr || current.status == QrRefreshStatus.LOADING) return
         val selectedFixture = qrFixture
         val startedOnline = connection == Connection.ONLINE
+        // Reemplazar el mapa notifica recomposición; conservar el ticket mantiene el QR visible durante carga/error.
         qrStates = qrStates + (ticketId to current.begin())
         viewModelScope.launch {
             delay(900)
@@ -284,11 +302,12 @@ class SisComeViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    // Publicar una nueva instantánea evita mutar listas observadas en lugar de notificar a Compose.
     private fun refresh() {
         records = SessionRecords(session.lines, session.tickets, session.operations)
     }
 
     override fun onCleared() {
-        networkManager.unregisterNetworkCallback(callback)
+        networkManager.unregisterNetworkCallback(callback) // Libera el observador y evita retener el ViewModel.
     }
 }

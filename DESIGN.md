@@ -1,6 +1,6 @@
 ---
 name: SisCome Native
-description: Source-derived Material 3 student-service prototype
+description: Source-derived web-faithful native Material 3 refinement
 colors:
   primary: "#1B5D4B"
   primary-container: "#E5F2ED"
@@ -8,7 +8,8 @@ colors:
   background: "#F4F7F5"
   surface: "#FFFFFF"
   foreground: "#172420"
-  pending-container: "#EEE9F8"
+  hero: "#123D32"
+  pending-container: "#FFF4DB"
   dark-background: "#101D18"
   dark-primary: "#A3D8C4"
 rounded:
@@ -30,13 +31,13 @@ spacing:
 Source-derived documentation of the approved reference identity, adapted to native Material 3 tasks. This is **not visual approval**: no phone/tablet screenshots or device inspection were performed. The finishing visual-review disposition is `recapture`, pending authorized device captures.
 
 ## Colors
-`ui/theme/Theme.kt` is the executable authority. Green carries active actions and ticket shortcuts; yellow marks selection count and connection warnings. Violet distinguishes unresolved operations. Separate light/dark schemes follow the system theme; no wallpaper-based recoloring is used.
+`ui/theme/Theme.kt` is the executable authority. Dark green (#123D32) anchors the ticket hero and cart; green (#1B5D4B) carries primary light-theme actions; yellow (#EFBD55) marks the brand/count. Unresolved operations use amber, not violet. All Material surface-container, inverse and tint roles are explicit: light navigation/sheets are white or green-neutral, dark surfaces use green-neutral counterparts. Separate schemes follow the system theme; no wallpaper-based recoloring is used.
 
 ## Typography
-Material 3's default native typography roles are used, without a remote font dependency. Page headings use headline roles; service/card headings use title roles; descriptions use body roles; controls and metadata use label roles. Text scales through `sp` defaults; actual large-text behavior still needs device verification.
+Bundled Inter defines every Material typography role: 26sp page headings, semibold 20sp section/hero headings, semibold 15sp card titles, 14sp body/actions and bold menu prices, 12sp menu descriptions/supporting copy and 11sp navigation labels, with explicit line heights, weights and zero letter spacing. `res/font/inter.ttf` is the unchanged upstream Inter variable TTF under SIL OFL 1.1; source, hash and license are bundled in `assets/fonts/`. Binary inspection confirms `wght` 100–900/default 400 and `opsz` 14–32/default 14. Android 26+ requests actual weight-axis instances and optical size 14; API 24–25 uses the regular default instance with native synthesis. No runtime remote font dependency exists. Type uses `sp`, not web px-to-dp conversion; actual loading and large-text rendering still need device verification.
 
 ## Layout
-Compact navigation is a five-destination bottom bar. At 840dp and above, a distinct navigation rail replaces it and Home has a 320dp selection panel. Content scrolls; date/service/filter rows can scroll horizontally. Scaffold insets reserve the cart bar above navigation. Dialogs are width-constrained to 560dp with scrollable content; sheets use native Material modal behavior.
+Compact navigation is a five-destination bottom bar. At 840dp and above, a distinct navigation rail replaces it and Home has a 320dp selection panel. Content scrolls; dates/history filters may scroll horizontally. The three service cards share available width equally inside a pale rounded group with 6dp inset, with no horizontal scroller or 128dp minimum; when effective width per card falls below 96dp after font scaling they stack. The filter uses an utensils vector; consumption and sale-end metadata use separate calendar and clock vectors. Scaffold insets reserve the cart above navigation. Dialogs are width-constrained to 560dp with scrollable content; the independent top-end close button stays outside the scroller with 48dp touch area and reserved header spacing. Sheets use native Material modal behavior, viewport-relative sizing and a bounded scrollable line list.
 
 ## Elevation & Depth
 Most content uses flat or outlined native surfaces. The floating selection surface uses Material shadow elevation at 6dp. Native button/chip/dialog/sheet elevation and state treatment remain framework-owned.
@@ -47,10 +48,15 @@ Notices, menu/ticket/payment cards, active-ticket/selection surfaces and dialogs
 ## Components
 Distinct meanings retain distinct components: service choice, menu variant, selection bar, selection sheet, checkout review/progress/result, ticket history/picker/detail and payment history/detail. Shared primitives cover icons, currency, notices and dialog framing, not domain decisions. Vector icons correspond to tasks; the launcher uses utensils rather than the template Android robot.
 
-Menu cards retain the reference's cropped photo-above-copy composition using external illustrative images, with loading/error text instead of fabricated replacements. Operation ticket pickers retain reference scope; expired/consumed detail has no QR controls. Available detail shows the saved QR throughout a refresh wait/failure and communicates the demo consultation separately from institutional validity. No device-level rendering judgment is implied.
+`MenuVariantCard` calls `MenuPhoto(variant.imageUrl)`: Coil's `SubcomposeAsyncImage` crops a 170dp image above name and description, with loading/error slots. Its 12dp rounded card footer uses a full-width space-between row: bold price left and outlined add pill far right, with a 48dp minimum touch height. Selected cards preserve green border, animated pale-green background, filled selected pill and photo check marker. Selection lines reuse the same image helper as 40dp thumbnails. Images are illustrative and remote; offline availability is not promised. Operation ticket pickers retain reference scope; expired/consumed detail has no QR controls. Available detail preserves the saved QR during refresh/failure and distinguishes a demo consultation from institutional validity.
+
+## Motion and disclosures
+Menu skeleton shimmer runs only during existing catalog/image waits. Date/service content uses a 220ms fade/6dp arrival keyed to the menu identity; selection uses a 150ms color/check transition; cart count and total crossfade on their actual value changes. The sheet retains native animation. Checkout shows a spinner, actual completed-stage track and current/done/upcoming labels, then a compact animated result. A query uses one truthful consultation step, not fabricated payment stages. Compose's duration scale controls finite/native animation; custom shimmer and spinner have an explicit `MotionDurationScale` zero-scale static branch. No new fixture delays were added.
+
+The app shell exposes `Prototipo · Sin dinero real` before task interactions, with an expandable identity/wallet/payment/QR/session explanation. Checkout uses `Confirmación de pago` and `Confirmar pago`, with one `No se realizará ningún cargo real.` notice beside confirmation and no PIN note. QR detail retains `Código de demostración sin validez institucional.` Demo scenario controls expand into a wrapping row; their consequence hint is hidden when collapsed. Success replaces the generic dialog header and badges with centered check, `RESULTADO CONFIRMADO`, singular/plural emitted-ticket heading, concise consequences, reference/issued IDs and one `Ver mis tickets` action scoped to that reference. Unknown-payment/no-repeat warnings, payment versus issuance, saved/unchecked QR states and same/new reference distinctions remain visible. No static-clock stock-update claim is added.
 
 ## Do's and Don'ts
-- Do preserve operational Spanish UI and English source identifiers/documentation.
+- Do preserve operational Spanish UI and English source identifiers/documentation; educational comments in owned Kotlin sources use neutral Spanish as explicitly requested.
 - Do describe payment, issuance and ticket lifecycle independently, with text beyond color.
 - Do keep ticket/payment overlays on the originating destination.
 - Do use the same stable fictitious QR cell function in display and PNG export.

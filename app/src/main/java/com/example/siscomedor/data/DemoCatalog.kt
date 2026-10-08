@@ -3,9 +3,11 @@ package com.example.siscomedor.data
 import com.example.siscomedor.domain.*
 
 object DemoCatalog {
+    // Fechas ISO y reloj fijo hacen reproducibles los escenarios; no representan disponibilidad en tiempo real.
     const val today = "2026-10-07"
     const val time = "16:40"
-    const val wallet = "Wallet Demo ···· 2841"
+    const val wallet = "Billetera Demo ···· 2841"
+    val wallets = listOf(wallet, "Billetera Demo ···· 7390")
     const val student = "Antonia Muñoz"
     val dates = listOf(
         PublishedDate(today, "HOY", true),
@@ -14,6 +16,7 @@ object DemoCatalog {
         PublishedDate("2026-10-10", "SÁB", false),
         PublishedDate("2026-10-12", "LUN", true)
     )
+    // when enumera cada servicio; las variantes y fotos son ejemplos, sin consulta institucional.
     fun variants(service: Service): List<Variant> = when (service) {
         Service.BREAKFAST -> listOf(
             Variant("traditional", "Desayuno clásico", "Pan con pollo, fruta de estación y bebida caliente",
@@ -40,9 +43,11 @@ object DemoCatalog {
 
     fun published(date: String) = dates.any { it.date == date && it.published }
     fun closed(key: SelectionKey) = key.date == today && time >= key.service.saleEnd
+    // La elegibilidad comprueba publicación, horario, variante y precio antes de aceptar una línea.
     fun eligible(line: SelectionLine) = published(line.date) && !closed(line.key) &&
         line.variant in variants(line.service) && line.cents == line.service.cents
 
+    // El historial inicial es independiente del carrito y se restaura al reiniciar el proceso.
     val tickets = listOf(
         Ticket("SC-2026-1048", line(today, Service.LUNCH, "traditional"), TicketStatus.AVAILABLE, "7 oct 2026 · 11:42"),
         Ticket("SC-2026-0924", line("2026-10-02", Service.LUNCH, "traditional"), TicketStatus.CONSUMED, "2 oct 2026 · 11:48")

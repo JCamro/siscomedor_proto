@@ -73,3 +73,10 @@
 - Five distinct reference photo URLs returned HTTP 200 / image/jpeg in bounded HEAD checks. Network image decoding/rendering was not device-tested.
 - Process-only Android Studio JBR was used; no global environment or SDK/local.properties changes.
 - Delivery status remains **partial solely because device/runtime/visual validation is unperformed**. Required commands pass and all three requested source corrections are complete; no emulator was launched.
+
+## Authorized recent-activity and checkout correction
+- Home activity now lists issued ticket records, their service/variant, consumption date, stored ticket-line amount, status and ID. Selecting a row opens that exact ticket; unavailable records remain read-only through the existing ticket detail rules. “Ver historial” routes to My Tickets, while operation history remains in Payments.
+- The selection sheet and checkout share a selectable pair of generic masked demo accounts. New operations snapshot the chosen wallet label; payment history displays the frozen value and same-reference query leaves it unchanged. No provider, credentials, or wallet integration was added.
+- Checkout review, processing and result now have separate hierarchy; progress includes amount/count and named stages. Result dialog uses one outcome title and retains the safe recovery actions. Confirmation says no real charge occurs without duplicated demo-success messaging.
+- Added wallet idempotency and Home activity wiring regression checks. Final `:app:testDebugUnitTest :app:assembleDebug --console=plain`: **BUILD SUCCESSFUL**, 27 tests, zero failures/errors/skips. Final `:app:lintDebug --console=plain`: **BUILD SUCCESSFUL**, zero errors and five existing advisory warnings (three newer dependency versions and two unused launcher resources).
+- No emulator or device settings were touched. Rendered layout, TalkBack, small-screen clipping and actual device screenshots remain unverified; handoff remains partial pending authorized device validation.

@@ -6,7 +6,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.example.siscomedor.ui.checkout.CheckoutDialog
 import com.example.siscomedor.ui.components.*
@@ -14,23 +18,40 @@ import com.example.siscomedor.ui.home.HomeScreen
 import com.example.siscomedor.ui.payments.*
 import com.example.siscomedor.ui.selection.*
 import com.example.siscomedor.ui.tickets.*
+import com.example.siscomedor.ui.theme.BrandYellow
+import com.example.siscomedor.ui.theme.TicketGreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SisComeApp(model: SisComeViewModel) {
+    // rememberSaveable guarda la expansión informativa; compras y navegación se mantienen en el ViewModel.
+    var disclosureOpen by rememberSaveable { mutableStateOf(false) }
+    // Back cierra primero la superposición. El ViewModel rechaza el cierre durante procesamiento.
     BackHandler(enabled = model.overlay != null || model.destination != Destination.HOME) {
         if (model.overlay != null) model.closeOverlay() else model.navigate(Destination.HOME)
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
+        // La adaptación depende de la ventana, no del modelo del dispositivo; funciona también en pantalla dividida.
         val wide = maxWidth >= 840.dp
         Row(Modifier.fillMaxSize()) {
             if (wide) AppNavigationRail(model)
             Scaffold(modifier = Modifier.weight(1f),
                 topBar = {
-                    TopAppBar(title = { Text("SisCome", style = MaterialTheme.typography.titleLarge) },
-                        actions = { TextButton(onClick = { model.show(Overlay.Connectivity) }, enabled = !model.processing) { Text(model.connection.label) } })
+                    TopAppBar(title = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Surface(color = BrandYellow, contentColor = TicketGreen, shape = MaterialTheme.shapes.extraSmall) {
+                                Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) { Text("S", style = MaterialTheme.typography.titleLarge) }
+                            }
+                            Text("SisCome", style = MaterialTheme.typography.titleLarge)
+                        }
+                    }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                        actions = { TextButton(onClick = { model.show(Overlay.Connectivity) }, enabled = !model.processing,
+                            modifier = Modifier.widthIn(max = 140.dp).semantics { contentDescription = "Conexión: ${model.connection.label}. Abrir simulador" }) {
+                            Text(model.connection.label, style = MaterialTheme.typography.labelMedium)
+                        } })
                 },
                 bottomBar = {
+                    // Carrito y navegación ocupan la misma zona inferior de Scaffold, sin superponerse.
                     if (!wide) Column {
                         if (model.destination == Destination.HOME && model.records.lines.isNotEmpty()) SelectionBar(model)
                         AppNavigationBar(model)
@@ -38,19 +59,28 @@ fun SisComeApp(model: SisComeViewModel) {
                 },
                 containerColor = MaterialTheme.colorScheme.background
             ) { padding ->
+                // Primero se aplica el espacio reservado; consumirlo evita que hijos sumen otra vez los mismos insets.
                 Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
+                    TextButton(onClick = { disclosureOpen = !disclosureOpen }, modifier = Modifier.fillMaxWidth()) {
+                        AppIcon("info")
+                        Spacer(Modifier.width(8.dp))
+                        Text("Prototipo · Sin dinero real", style = MaterialTheme.typography.labelMedium)
+                    }
+                    if (disclosureOpen) Text("Identidad, billetera, pagos y tickets de demostración. Los códigos no tienen validez institucional. El estado se pierde al cerrar el proceso.",
+                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
                     ConnectivityStatus(model)
                     when (model.destination) {
                         Destination.HOME -> HomeScreen(model, wide)
                         Destination.TICKETS -> MyTicketsScreen(model)
                         Destination.PAYMENTS -> PaymentsScreen(model)
-                        Destination.WALLETS -> UnimplementedScreen("Billeteras", "Solo se usa Wallet Demo ···· 2841, una billetera ficticia. La vinculación, autorización y gestión de proveedores no están implementadas. No ingreses credenciales.")
+                        Destination.WALLETS -> UnimplementedScreen("Billeteras", "Las cuentas disponibles son solo opciones de demostración para el pago. La vinculación, autorización y gestión de proveedores no están implementadas. No ingreses credenciales.")
                         Destination.ACCOUNT -> UnimplementedScreen("Mi cuenta", "Antonia Muñoz es una identidad ficticia. No hay autenticación, edición de perfil ni políticas institucionales de datos implementadas.")
                     }
                 }
             }
         }
     }
+    // El renderizado depende del estado: los diálogos se montan encima del destino sin cambiarlo silenciosamente.
     when (val overlay = model.overlay) {
         Overlay.Selection -> SelectionSheet(model)
         Overlay.Checkout -> CheckoutDialog(model)
@@ -66,10 +96,12 @@ fun SisComeApp(model: SisComeViewModel) {
 
 @Composable
 fun AppNavigationBar(model: SisComeViewModel) {
-    NavigationBar {
+    NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
         Destination.entries.forEach { destination ->
             NavigationBarItem(selected = model.destination == destination,
                 onClick = { model.navigate(destination) }, enabled = !model.processing,
+                colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                    selectedIconColor = MaterialTheme.colorScheme.primary, selectedTextColor = MaterialTheme.colorScheme.primary),
                 icon = { AppIcon(destination.icon) }, label = { Text(destination.label, style = MaterialTheme.typography.labelSmall) })
         }
     }
@@ -77,7 +109,7 @@ fun AppNavigationBar(model: SisComeViewModel) {
 
 @Composable
 fun AppNavigationRail(model: SisComeViewModel) {
-    NavigationRail(modifier = Modifier.safeDrawingPadding(), header = { Text("SisCome", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(12.dp)) }) {
+    NavigationRail(containerColor = MaterialTheme.colorScheme.surface, modifier = Modifier.safeDrawingPadding(), header = { Text("SisCome", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(12.dp)) }) {
         Destination.entries.forEach { destination ->
             NavigationRailItem(selected = model.destination == destination,
                 onClick = { model.navigate(destination) }, enabled = !model.processing,

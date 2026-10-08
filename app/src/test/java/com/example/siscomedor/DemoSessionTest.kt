@@ -85,6 +85,16 @@ class DemoSessionTest {
         assertEquals("vegetarian", session.tickets.single { it.line.key == line().key }.line.variant.id)
     }
 
+    @Test fun operationKeepsSelectedWalletWhenQueried() {
+        val session = DemoSession()
+        session.toggle(line())
+        val selectedWallet = "Billetera Demo ···· 7390"
+        session.submit("DEMO-1", session.lines, Scenario.UNKNOWN, selectedWallet)
+        assertEquals(selectedWallet, session.operations.single().wallet)
+        session.query("DEMO-1")
+        assertEquals(selectedWallet, session.operations.single().wallet)
+    }
+
     @Test fun soldOutRecoveryIsExplicitAndNeverCharges() {
         val session = DemoSession()
         session.toggle(line())
