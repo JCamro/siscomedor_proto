@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-08T02:00:00Z",
+  "title": "Design System: SisCome Native",
+  "extensions": {
+    "breakpoints": [
+      { "name": "expanded-navigation", "value": "840dp" }
+    ],
+    "shadows": [
+      { "name": "selection-bar", "value": "6dp Material shadow elevation", "purpose": "Floating selection surface above compact navigation." }
+    ]
+  },
+  "components": [],
+  "narrative": {
+    "overview": "Native Material 3 adaptation of the approved SisCome reference identity. Source-derived documentation only; device visual review remains pending.",
+    "keyCharacteristics": ["Dark green task surfaces", "Yellow selection accents", "Independent payment and issuance text", "Distinct native screens and overlays"],
+    "dos": ["Preserve operational Spanish UI.", "Keep status meaning understandable beyond color."],
+    "donts": ["Do not imply real payment or institutional QR validity.", "Do not treat build evidence as device validation."]
+  }
+}
