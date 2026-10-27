@@ -8,7 +8,7 @@ object DemoCatalog {
     const val time = "16:40"
     const val wallet = "Billetera Demo ···· 2841"
     val wallets = listOf(wallet, "Billetera Demo ···· 7390")
-    const val student = "Antonia Muñoz"
+    const val student = "Brayan Motta Medina"
     val dates = listOf(
         PublishedDate(today, "HOY", true),
         PublishedDate("2026-10-08", "JUE", true),
