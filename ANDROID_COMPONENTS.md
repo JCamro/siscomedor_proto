@@ -104,14 +104,14 @@ Each screen folder owns its screen composable and screen-specific subcomponents.
 
 | Compose component | Responsibility | Distinction to preserve |
 |---|---|---|
-| `HomeScreen` | Compose the Home-only content and connect it to screen state/actions. | Does not own payment/ticket domain rules. |
+| `HomeScreen` | Container: read the ViewModel, build `HomeUiState`/`HomeActions` and pass them to the stateless `HomeContent` (previewable in `ui/home/HomePreviews.kt`). | Does not own payment/ticket domain rules. |
 | `WelcomeHeader` | Show student-facing greeting and demo date. | Not account management. |
 | `ActiveTicketCard` | Shortcut to one known active ticket and its QR. | Not the My Tickets history and not a ticket detail itself. |
 | `MenuSection` | Present menu content plus loading, unavailable, and error states. | Loading is not an empty menu; no publication is not a connectivity error. |
 | `DateSelector` / `DateOptionItem` | Select only dates with a confirmed published menu; show unavailable dates and selected count. | Availability must not be inferred for future dates. |
 | `ServiceSelector` / `ServiceOptionCard` | Choose breakfast, lunch or dinner and show hours, sale state, selected/owned badges. | This is intentionally prominent, not a generic compact segmented control. A closed service may remain selectable for information but cannot be acquired. |
 | `MenuVariantCard` | Show one published variant's name, description, price, image and selection state. | Similar-looking variants remain distinct domain items. Selecting another variant replaces the same date-service selection; it never adds a quantity. |
-| `OwnedTicketNotice` | Explain that the selected date-service already has a ticket and link to its QR. | Different from a closed-sale message. It must not offer repurchase. |
+| `OwnedTicketNotice` | Explain that the selected date-service already has a ticket, link to its QR and, when one exists, jump to the next buyable date-service. | Different from a closed-sale message. It must not offer repurchase. |
 | `SaleClosedNotice` | Explain that the sale window has closed and provide only a safe alternative if one exists. | Different from exhausted availability, missing publication, or an owned ticket. |
 | `AvailabilityNotice` | Explain that the item is currently eligible to select and will be revalidated before payment. | Does not promise inventory or guarantee purchase. |
 | `RecentActivitySection` | Show a small recent summary with links to the relevant ticket/payment history when wired. | Not the full My Tickets or Payments modules. |

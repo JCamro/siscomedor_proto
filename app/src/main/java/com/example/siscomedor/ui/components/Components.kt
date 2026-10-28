@@ -40,6 +40,9 @@ fun price(cents: Int): String = NumberFormat.getCurrencyInstance(Locale.forLangu
     currency = Currency.getInstance("PEN")
 }.format(cents / 100.0)
 
+// Elige la forma singular o plural para que los contadores lean "1 servicio" y no "1 servicios".
+fun plural(count: Int, one: String, many: String) = "$count ${if (count == 1) one else many}"
+
 fun dateLabel(date: String): String {
     val month = listOf("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
     return "${date.substring(8).toInt()} ${month[date.substring(5, 7).toInt() - 1]} ${date.substring(0, 4)}"
@@ -59,7 +62,9 @@ private val iconPaths = mapOf(
     "check" to "M5,12 L9,16 L19,6",
     "close" to "M6,6 L18,18 M18,6 L6,18",
     "download" to "M12,3 L12,15 M7,10 L12,15 L17,10 M3,16 L3,21 L21,21 L21,16",
-    "arrow" to "M5,12 L19,12 M14,7 L19,12 L14,17"
+    "arrow" to "M5,12 L19,12 M14,7 L19,12 L14,17",
+    "eye" to "M2,12 C5,6 19,6 22,12 C19,18 5,18 2,12 Z M12,9 A3,3 0,1 1,12 15 A3,3 0,1 1,12 9",
+    "eye-off" to "M2,12 C5,6 19,6 22,12 C19,18 5,18 2,12 Z M12,9 A3,3 0,1 1,12 15 A3,3 0,1 1,12 9 M4,4 L20,20"
 )
 
 @Composable

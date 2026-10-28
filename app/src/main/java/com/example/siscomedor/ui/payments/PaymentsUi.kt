@@ -17,8 +17,20 @@ import com.example.siscomedor.ui.selection.SelectionLineRow
 
 @Composable
 fun PaymentsScreen(model: SisComeViewModel) {
+    // Contenedor ("props down, events up"): lee el ViewModel y conecta acciones. PaymentsContent
+    // solo recibe valores y lambdas, sin ViewModel, por eso se puede abrir en Preview.
+    PaymentsContent(
+        operations = model.records.operations,
+        filter = model.paymentFilter,
+        onFilterChange = { model.paymentFilter = it },
+        onOpenDetail = { reference -> model.show(Overlay.PaymentDetail(reference)) }
+    )
+}
+
+@Composable
+fun PaymentsContent(operations: List<PaymentOperation>, filter: PaymentStatus?, onFilterChange: (PaymentStatus?) -> Unit, onOpenDetail: (String) -> Unit) {
     // Una verificación agotada nunca inició pago: se excluye del historial, no se presenta como un rechazo.
-    val payments = model.records.operations.filter { it.payment != PaymentStatus.NOT_STARTED }
+    val payments = operations.filter { it.payment != PaymentStatus.NOT_STARTED }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         PageTitle("Pagos", "Consulta el pago y la emisión de cada operación por separado.")
         // Se suma solo pago confirmado; la emisión se consulta por separado aunque ese pago ya esté confirmado.
@@ -26,23 +38,23 @@ fun PaymentsScreen(model: SisComeViewModel) {
         OutlinedCard(shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("${confirmed.size} pagos confirmados", style = MaterialTheme.typography.labelLarge)
+                    Text(plural(confirmed.size, "pago confirmado", "pagos confirmados"),style = MaterialTheme.typography.labelLarge)
                     Text(price(confirmed.sumOf { it.cents }), style = MaterialTheme.typography.titleLarge)
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatusBadge("${payments.count { it.payment == PaymentStatus.UNKNOWN }} por verificar", pending = true)
-                    StatusBadge("${payments.count { it.payment == PaymentStatus.REJECTED }} rechazados", error = true)
+                    StatusBadge(plural(payments.count { it.payment == PaymentStatus.REJECTED }, "rechazado", "rechazados"), error = true)
                 }
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Historial de operaciones", style = MaterialTheme.typography.titleLarge)
-                PaymentFilterBar(model.paymentFilter) { model.paymentFilter = it }
+                PaymentFilterBar(filter, onFilterChange)
             }
-            val filtered = payments.filter { model.paymentFilter == null || it.payment == model.paymentFilter }
+            val filtered = payments.filter { filter == null || it.payment == filter }
             if (filtered.isEmpty()) EmptyState("No hay pagos en este estado", "Selecciona otro filtro. La demo no consulta historiales institucionales.")
-            filtered.forEach { PaymentOperationRow(it) { model.show(Overlay.PaymentDetail(it.reference)) } }
+            filtered.forEach { operation -> PaymentOperationRow(operation) { onOpenDetail(operation.reference) } }
         }
         Text("Pago y ticket son estados independientes. Un pago confirmado puede tener emisión pendiente. Consulta la misma referencia antes de intentar otro pago.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

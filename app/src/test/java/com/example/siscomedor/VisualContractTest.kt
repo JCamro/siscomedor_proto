@@ -63,11 +63,14 @@ class VisualContractTest {
 
     @Test fun recentActivityShowsTicketRecordsAndRoutesToTicketHistory() {
         val home = source("ui/home/HomeScreen.kt")
-        assertTrue(home.contains("model.records.tickets.sortedByDescending"))
+        // El contenedor entrega records.tickets; la sección sin estado ordena esos registros y abre su detalle.
+        assertTrue(home.contains("tickets = records.tickets"))
+        assertTrue(home.contains("tickets.sortedByDescending"))
         assertTrue(home.contains("ticket.line.variant.name"))
         assertTrue(home.contains("ticket.line.cents"))
-        assertTrue(home.contains("model.openTickets(ticket.id)"))
-        assertTrue(home.contains("model.navigate(Destination.TICKETS)"))
+        assertTrue(home.contains("onOpenTicket(ticket.id)"))
+        assertTrue(home.contains("model.openTickets(ticketId)"))
+        assertTrue(home.contains("onShowTickets = onShowTickets"))
         assertFalse(home.contains("model.records.operations.take(2)"))
     }
 
@@ -75,8 +78,13 @@ class VisualContractTest {
         val checkout = source("ui/checkout/CheckoutDialog.kt")
         val selection = source("ui/selection/SelectionUi.kt")
         val payments = source("ui/payments/PaymentsUi.kt")
-        assertTrue(checkout.contains("WalletSummary(model.selectedWallet, model::selectWallet)"))
-        assertTrue(selection.contains("WalletSummary(model.selectedWallet, model::selectWallet)"))
+        // Los contenedores pasan la billetera compartida del ViewModel; el contenido sin estado solo la muestra.
+        assertTrue(checkout.contains("selectedWallet = model.selectedWallet"))
+        assertTrue(checkout.contains("onSelectWallet = model::selectWallet"))
+        assertTrue(checkout.contains("WalletSummary(selectedWallet, onSelectWallet)"))
+        assertTrue(selection.contains("model.selectedWallet"))
+        assertTrue(selection.contains("onSelectWallet = model::selectWallet"))
+        assertTrue(selection.contains("WalletSummary(state.selectedWallet, actions.onSelectWallet)"))
         assertTrue(payments.contains("WalletSummary(operation.wallet, null)"))
     }
 

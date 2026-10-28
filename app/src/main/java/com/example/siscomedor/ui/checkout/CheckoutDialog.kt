@@ -21,16 +21,9 @@ import com.example.siscomedor.ui.selection.SelectionLineRow
 @Composable
 fun CheckoutDialog(model: SisComeViewModel) {
     // El diálogo observa el ViewModel: revisar, procesar y mostrar resultado son estados, no pantallas duplicadas.
+    // Es el contenedor: el paso de revisión se delega a CheckoutReviewContent, que solo recibe valores y lambdas.
     val result = model.result
-    val resultTitle = result?.let {
-        when {
-            it.payment == PaymentStatus.UNKNOWN -> "Pago por verificar"
-            it.unresolved -> "Emisión pendiente"
-            it.payment == PaymentStatus.REJECTED -> "Pago rechazado"
-            it.payment == PaymentStatus.NOT_STARTED -> "Menú agotado"
-            else -> if (it.lines.size == 1) "Ticket emitido correctamente" else "Tickets emitidos correctamente"
-        }
-    }
+    val resultTitle = result?.let { resultTitle(it, model.pickerTickets(it.reference)) }
     AppDialog(if (model.processing) "Operación en curso" else resultTitle ?: "Revisa antes de confirmar",
         model::closeOverlay, dismissible = !model.processing,
         kicker = if (model.processing || result != null) null else "Confirmación de pago",
@@ -38,43 +31,73 @@ fun CheckoutDialog(model: SisComeViewModel) {
         when {
             model.processing -> OperationProgress(model.stage, model.querying,
                 model.review?.lines?.sumOf { it.cents } ?: 0, model.review?.lines?.size ?: 0)
-            model.result != null -> ContentArrival(model.result!!.reference to model.result!!.payment) { OperationResult(model.result!!, model) }
-            else -> {
-                model.review?.let { review ->
-                    // Referencia e introducción pertenecen al mismo contexto; líneas y decisión tienen separadores.
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Una operación para toda la selección. Pago y emisión se comprueban por separado.", style = MaterialTheme.typography.bodyMedium)
-                        Text("Nueva operación: ${review.reference}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    HorizontalDivider()
-                    Column {
-                        review.lines.forEachIndexed { index, line ->
-                            if (index > 0) HorizontalDivider()
-                            SelectionLineRow(line, false)
-                        }
-                    }
-                    HorizontalDivider()
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        WalletSummary(model.selectedWallet, model::selectWallet)
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("Total", style = MaterialTheme.typography.titleMedium)
-                            Text(price(review.lines.sumOf { it.cents }), style = MaterialTheme.typography.headlineSmall)
-                        }
-                    }
-                }
-                HorizontalDivider()
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DemoScenarioPicker(model.scenario, model::chooseScenario)
-                    model.notice?.let { Notice("No se inició el pago", it) }
-                    Text("No se realizará ningún cargo real.", style = MaterialTheme.typography.bodySmall)
-                    Button(onClick = model::confirm, enabled = model.connection == Connection.ONLINE,
-                        modifier = Modifier.fillMaxWidth()) {
-                        Text("Confirmar pago")
-                        Spacer(Modifier.width(8.dp))
-                        AppIcon("arrow")
-                    }
-                }
+            result != null -> ContentArrival(result.reference to result.payment) { OperationResult(result, model) }
+            else -> CheckoutReviewContent(
+                review = model.review,
+                selectedWallet = model.selectedWallet,
+                scenario = model.scenario,
+                notice = model.notice,
+                connection = model.connection,
+                onSelectWallet = model::selectWallet,
+                onChooseScenario = model::chooseScenario,
+                onConfirm = model::confirm
+            )
+        }
+    }
+}
+
+@Composable
+fun CheckoutReviewContent(
+    review: CheckoutReview?,
+    selectedWallet: String,
+    scenario: Scenario,
+    notice: String?,
+    connection: Connection,
+    onSelectWallet: (String) -> Unit,
+    onChooseScenario: (Scenario) -> Unit,
+    onConfirm: () -> Unit
+) {
+    // Estado "revisar" sin ViewModel: CheckoutDialog (el contenedor) le pasa valores y lambdas.
+    // Emite sus bloques directamente en la columna del diálogo, así se conserva el mismo espaciado.
+    if (review != null) {
+        // Referencia e introducción pertenecen al mismo contexto; líneas y decisión tienen separadores.
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Una operación para toda la selección. Pago y emisión se comprueban por separado.", style = MaterialTheme.typography.bodyMedium)
+            Text("Nueva operación: ${review.reference}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        HorizontalDivider()
+        Column {
+            review.lines.forEachIndexed { index, line ->
+                if (index > 0) HorizontalDivider()
+                SelectionLineRow(line, false)
             }
+        }
+        HorizontalDivider()
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            WalletSummary(selectedWallet, onSelectWallet)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Total", style = MaterialTheme.typography.titleMedium)
+                Text(price(review.lines.sumOf { it.cents }), style = MaterialTheme.typography.headlineSmall)
+            }
+        }
+    }
+    HorizontalDivider()
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        DemoScenarioPicker(scenario, onChooseScenario)
+        if (notice != null) Notice("No se inició el pago", notice)
+        // El aviso de conexión de la pantalla queda detrás del diálogo; se repite aquí para explicar el botón deshabilitado.
+        if (notice == null && connection != Connection.ONLINE) {
+            Notice(connection.label, if (connection == Connection.LOADING)
+                "Comprobando la conexión. Podrás confirmar cuando termine."
+                else "No se puede confirmar el pago ahora. La selección se conserva.",
+                pending = connection == Connection.LOADING, error = connection != Connection.LOADING)
+        }
+        Text("No se realizará ningún cargo real.", style = MaterialTheme.typography.bodySmall)
+        Button(onClick = onConfirm, enabled = connection == Connection.ONLINE,
+            modifier = Modifier.fillMaxWidth()) {
+            Text("Confirmar pago")
+            Spacer(Modifier.width(8.dp))
+            AppIcon("arrow")
         }
     }
 }
@@ -136,6 +159,19 @@ fun OperationProgress(stage: Int, querying: Boolean, cents: Int, ticketCount: In
     }
 }
 
+private fun allExpired(issued: List<Ticket>) = issued.isNotEmpty() && issued.all { it.status == TicketStatus.EXPIRED }
+
+// Un solo lugar decide el título del resultado; el encabezado del diálogo y el cuerpo lo comparten.
+private fun resultTitle(operation: PaymentOperation, issued: List<Ticket>): String = when {
+    operation.payment == PaymentStatus.UNKNOWN -> "Pago por verificar"
+    operation.unresolved -> "Emisión pendiente"
+    operation.payment == PaymentStatus.REJECTED -> "Pago rechazado"
+    operation.payment == PaymentStatus.NOT_STARTED -> "Menú agotado"
+    allExpired(issued) -> if (issued.size == 1) "Ticket emitido vencido" else "Tickets emitidos vencidos"
+    operation.lines.size == 1 -> "Ticket emitido correctamente"
+    else -> "Tickets emitidos correctamente"
+}
+
 @Composable
 fun OperationResult(operation: PaymentOperation, model: SisComeViewModel) {
     // El resultado reemplaza el encabezado genérico; los estados inciertos mantienen sus instrucciones de recuperación.
@@ -146,15 +182,9 @@ fun OperationResult(operation: PaymentOperation, model: SisComeViewModel) {
             Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) { AppIcon(if (failed) "close" else if (operation.unresolved) "clock" else "check") }
         }
     }
+    val issued = model.pickerTickets(operation.reference)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(when {
-            operation.payment == PaymentStatus.UNKNOWN -> "Pago por verificar"
-            operation.unresolved -> "Emisión pendiente"
-            operation.payment == PaymentStatus.REJECTED -> "Pago rechazado"
-            operation.payment == PaymentStatus.NOT_STARTED -> "Menú agotado"
-            operation.lines.size == 1 -> "Ticket emitido correctamente"
-            else -> "Tickets emitidos correctamente"
-        }, modifier = Modifier.fillMaxWidth().semantics { heading() }, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        Text(resultTitle(operation, issued), modifier = Modifier.fillMaxWidth().semantics { heading() }, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             style = MaterialTheme.typography.titleLarge)
         val message = when {
             operation.unresolved && operation.payment == PaymentStatus.UNKNOWN ->
@@ -165,6 +195,8 @@ fun OperationResult(operation: PaymentOperation, model: SisComeViewModel) {
                 "No hubo cargo ni se emitieron tickets. Se conserva la selección; puedes revisar un nuevo intento con una nueva referencia de demostración."
             operation.payment == PaymentStatus.NOT_STARTED ->
                 "Sin cargo ni emisión. Selección conservada hasta que quites la línea agotada. Revisa los demás servicios antes de una nueva operación."
+            allExpired(issued) ->
+                "Pago confirmado, pero la fecha del servicio ya pasó: los tickets se emitieron vencidos y no generan código QR."
             else ->
                 "Pago confirmado y tickets emitidos. Los servicios emitidos se retiraron de tu selección; los demás se conservan."
         }

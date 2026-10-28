@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import com.example.siscomedor.domain.SelectionKey
 import com.example.siscomedor.domain.SelectionLine
 import com.example.siscomedor.ui.Overlay
 import com.example.siscomedor.ui.SisComeViewModel
@@ -72,42 +73,86 @@ fun SelectionSheet(model: SisComeViewModel) {
         containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().heightIn(max = maxHeight).navigationBarsPadding()) {
-            Box(Modifier.padding(horizontal = 20.dp)) { SelectionHeader(model, model::closeOverlay) }
+            val state = buildSelectionUiState(model)
+            val actions = selectionActions(model)
+            Box(Modifier.padding(horizontal = 20.dp)) { SelectionHeader(state, actions.onClear, model::closeOverlay) }
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(20.dp)) {
-                SelectionSummaryPanel(model, showHeader = false)
+                SelectionSummaryContent(state, actions, showHeader = false)
             }
         }
     }
 }
 
+// Lo que el resumen de selección muestra, ya calculado: qué líneas están pendientes o agotadas.
+data class SelectionUiState(
+    val lines: List<SelectionLine>,
+    val pendingKeys: Set<SelectionKey>,
+    val unavailableKeys: Set<SelectionKey>,
+    val selectedWallet: String,
+    val canCheckout: Boolean
+)
+
+// Eventos del resumen; los valores por defecto no hacen nada para poder usarlo en vistas previas.
+class SelectionActions(
+    val onRemove: (SelectionKey) -> Unit = {},
+    val onClear: () -> Unit = {},
+    val onSelectWallet: (String) -> Unit = {},
+    val onCheckout: () -> Unit = {}
+)
+
+fun buildSelectionUiState(model: SisComeViewModel): SelectionUiState {
+    val lines = model.records.lines
+    val pendingKeys = mutableSetOf<SelectionKey>()
+    val unavailableKeys = mutableSetOf<SelectionKey>()
+    for (line in lines) {
+        if (model.pending(line.key) != null) pendingKeys.add(line.key)
+        if (model.unavailable(line.key)) unavailableKeys.add(line.key)
+    }
+    return SelectionUiState(lines, pendingKeys, unavailableKeys, model.selectedWallet, model.canCheckout)
+}
+
+fun selectionActions(model: SisComeViewModel) = SelectionActions(
+    onRemove = model::remove,
+    onClear = model::clearSelection,
+    onSelectWallet = model::selectWallet,
+    onCheckout = model::beginCheckout
+)
+
 @Composable
 fun SelectionSummaryPanel(model: SisComeViewModel, showHeader: Boolean = true) {
+    // Contenedor: traduce el ViewModel a SelectionUiState + SelectionActions. SelectionSummaryContent
+    // solo recibe valores y lambdas ("props down, events up"), así que también funciona en Preview.
+    SelectionSummaryContent(buildSelectionUiState(model), selectionActions(model), showHeader)
+}
+
+@Composable
+fun SelectionSummaryContent(state: SelectionUiState, actions: SelectionActions, showHeader: Boolean = true) {
     // Panel y hoja comparten contenido, no dos desplazamientos anidados ni un pie fijo que falle en poca altura.
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        if (showHeader) SelectionHeader(model)
-        if (model.records.lines.isEmpty()) {
+        if (showHeader) SelectionHeader(state, actions.onClear)
+        if (state.lines.isEmpty()) {
             AppIcon("ticket", tint = MaterialTheme.colorScheme.primary)
             EmptyState("Aún no has agregado servicios", "Elige un menú. Puedes combinar servicios de distintos días y pagar todo junto.")
         }
         Column {
-            model.records.lines.forEachIndexed { index, line ->
+            state.lines.forEachIndexed { index, line ->
                 if (index > 0) HorizontalDivider()
-                SelectionLineRow(line, model.pending(line.key) != null) { model.remove(line.key) }
-                if (model.unavailable(line.key)) Text("Agotado en esta demo: quita esta línea antes de pagar", style = MaterialTheme.typography.labelLarge)
+                SelectionLineRow(line, line.key in state.pendingKeys) { actions.onRemove(line.key) }
+                if (line.key in state.unavailableKeys) Text("Agotado en esta demo: quita esta línea antes de pagar", style = MaterialTheme.typography.labelLarge)
             }
         }
-        if (model.records.lines.isNotEmpty()) {
+        if (state.lines.isNotEmpty()) {
             // Una línea pendiente no se borra ni paga otra vez; la explicación acompaña los controles deshabilitados.
-            val pending = model.records.lines.any { model.pending(it.key) != null }
+            val pending = state.pendingKeys.isNotEmpty()
             HorizontalDivider()
             // Importe, billetera y confirmación forman el grupo de decisión, separado de las líneas.
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("Total", style = MaterialTheme.typography.titleMedium)
-                    Text(price(model.records.lines.sumOf { it.cents }), style = MaterialTheme.typography.headlineSmall)
+                    Text(price(state.lines.sumOf { it.cents }), style = MaterialTheme.typography.headlineSmall)
                 }
-                WalletSummary(model.selectedWallet, model::selectWallet)
-                Button(onClick = model::beginCheckout, enabled = model.canCheckout, modifier = Modifier.fillMaxWidth()) { Text("Revisar y pagar") }
+                WalletSummary(state.selectedWallet, actions.onSelectWallet)
+                Button(onClick = actions.onCheckout, enabled = state.canCheckout, modifier = Modifier.fillMaxWidth()) { Text("Revisar y pagar") }
             }
             if (pending) {
                 Notice("Selección conservada", "Consulta la misma referencia desde Pagos. No puedes vaciar ni volver a pagar mientras la operación esté pendiente.", pending = true)
@@ -123,15 +168,15 @@ fun SelectionSummaryPanel(model: SisComeViewModel, showHeader: Boolean = true) {
 }
 
 @Composable
-private fun SelectionHeader(model: SisComeViewModel, onClose: (() -> Unit)? = null) {
+private fun SelectionHeader(state: SelectionUiState, onClear: () -> Unit, onClose: (() -> Unit)? = null) {
     // Título, cantidad y limpieza comparten contexto; el cierre reserva su propia área de 48 dp.
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Tu selección", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-            Text("${model.records.lines.size} servicios seleccionados", style = MaterialTheme.typography.bodySmall)
+            Text(plural(state.lines.size, "servicio seleccionado", "servicios seleccionados"),style = MaterialTheme.typography.bodySmall)
         }
-        if (model.records.lines.isNotEmpty()) TextButton(onClick = model::clearSelection,
-            enabled = model.records.lines.none { model.pending(it.key) != null }) { Text("Vaciar") }
+        if (state.lines.isNotEmpty()) TextButton(onClick = onClear,
+            enabled = state.lines.none { it.key in state.pendingKeys }) { Text("Vaciar") }
         if (onClose != null) IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
             AppIcon("close", description = "Cerrar selección")
         }

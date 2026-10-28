@@ -32,21 +32,115 @@ import com.example.siscomedor.ui.theme.TicketGreen
 import com.example.siscomedor.ui.theme.TicketSecondary
 import com.example.siscomedor.ui.theme.BrandYellow
 
+// Todo lo que Inicio necesita mostrar, como valores simples. El contenedor lo arma desde el ViewModel
+// y las vistas previas lo arman desde DemoSession; la pantalla no sabe de dónde viene.
+data class HomeUiState(
+    val date: String,
+    val service: Service,
+    val connection: Connection,
+    val menuLoading: Boolean,
+    val lines: List<SelectionLine>,
+    val tickets: List<Ticket>,
+    val ownedTickets: Map<SelectionKey, Ticket>,
+    val pendingOperations: Map<SelectionKey, PaymentOperation>,
+    val unavailableKeys: Set<SelectionKey>,
+    val hasNextAvailable: Boolean
+) {
+    val activeTicket: Ticket? get() = tickets.firstOrNull { it.status == TicketStatus.AVAILABLE }
+}
+
+// Eventos que Inicio envía hacia arriba. Cada valor por defecto no hace nada, útil en las vistas previas.
+class HomeActions(
+    val onOpenTicket: (String) -> Unit = {},
+    val onSelectDate: (String) -> Unit = {},
+    val onSelectService: (Service) -> Unit = {},
+    val onToggleVariant: (String) -> Unit = {},
+    val onRemoveLine: (SelectionKey) -> Unit = {},
+    val onShowPayment: (String) -> Unit = {},
+    val onRetryConnection: () -> Unit = {},
+    val onShowTickets: () -> Unit = {},
+    val onShowNextAvailable: () -> Unit = {}
+)
+
+// Recorre cada fecha y servicio del catálogo una sola vez y guarda qué claves están bloqueadas.
+// Recibe las reglas como funciones para reutilizar las del dominio en lugar de copiarlas.
+fun buildHomeUiState(
+    date: String,
+    service: Service,
+    connection: Connection,
+    menuLoading: Boolean,
+    lines: List<SelectionLine>,
+    tickets: List<Ticket>,
+    hasNextAvailable: Boolean,
+    owned: (SelectionKey) -> Ticket?,
+    pending: (SelectionKey) -> PaymentOperation?,
+    unavailable: (SelectionKey) -> Boolean
+): HomeUiState {
+    val ownedTickets = mutableMapOf<SelectionKey, Ticket>()
+    val pendingOperations = mutableMapOf<SelectionKey, PaymentOperation>()
+    val unavailableKeys = mutableSetOf<SelectionKey>()
+    for (publishedDate in DemoCatalog.dates) {
+        for (option in Service.entries) {
+            val key = SelectionKey(publishedDate.date, option)
+            val ticket = owned(key)
+            if (ticket != null) ownedTickets[key] = ticket
+            val operation = pending(key)
+            if (operation != null) pendingOperations[key] = operation
+            if (unavailable(key)) unavailableKeys.add(key)
+        }
+    }
+    return HomeUiState(date, service, connection, menuLoading, lines, tickets,
+        ownedTickets, pendingOperations, unavailableKeys, hasNextAvailable)
+}
+
 @Composable
-fun HomeScreen(model: SisComeViewModel, wide: Boolean) {
+fun HomeScreen(model: SisComeViewModel, wide: Boolean, onShowTickets: () -> Unit) {
+    // onShowTickets llega desde NavHost: la pantalla no conoce el NavController.
+    // Contenedor ("props down, events up", como en React): solo lee el ViewModel y conecta acciones.
+    // HomeContent no conoce el ViewModel; recibe valores y lambdas, por eso se puede abrir en Preview.
+    val records = model.records
+    val state = buildHomeUiState(
+        date = model.date,
+        service = model.service,
+        connection = model.connection,
+        menuLoading = model.menuLoading,
+        lines = records.lines,
+        tickets = records.tickets,
+        hasNextAvailable = model.hasNextAvailable,
+        owned = model::owned,
+        pending = model::pending,
+        unavailable = model::unavailable
+    )
+    val actions = HomeActions(
+        onOpenTicket = { ticketId -> model.openTickets(ticketId) },
+        onSelectDate = model::selectDate,
+        onSelectService = model::selectService,
+        onToggleVariant = model::toggle,
+        onRemoveLine = model::remove,
+        onShowPayment = { reference -> model.show(Overlay.PaymentDetail(reference)) },
+        onRetryConnection = { model.connect(ConnectionFixture.NORMAL) },
+        onShowTickets = onShowTickets,
+        onShowNextAvailable = model::showNextAvailable
+    )
+    HomeContent(state, wide, actions, sidePanel = { SelectionSummaryPanel(model) })
+}
+
+@Composable
+fun HomeContent(state: HomeUiState, wide: Boolean, actions: HomeActions, sidePanel: @Composable () -> Unit = {}) {
     // @Composable describe la pantalla a partir del estado: Compose vuelve a ejecutar los bloques afectados.
     // weight entrega al menú el ancho restante; el resumen lateral solo existe en ventanas amplias.
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)) {
         WelcomeHeader()
-        model.availableTickets.firstOrNull()?.let { ActiveTicketCard(it) { model.openTickets(it.id) } }
+        val activeTicket = state.activeTicket
+        if (activeTicket != null) ActiveTicketCard(activeTicket) { actions.onOpenTicket(activeTicket.id) }
         if (wide) {
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                Column(Modifier.weight(1f)) { MenuSection(model) }
-                Column(Modifier.width(320.dp)) { SelectionSummaryPanel(model) }
+                Column(Modifier.weight(1f)) { MenuSection(state, actions) }
+                Column(Modifier.width(320.dp)) { sidePanel() }
             }
-        } else MenuSection(model)
-        RecentActivitySection(model)
+        } else MenuSection(state, actions)
+        RecentActivitySection(state.tickets, actions.onOpenTicket, actions.onShowTickets)
     }
 }
 
@@ -78,7 +172,7 @@ fun ActiveTicketCard(ticket: Ticket, onQr: () -> Unit) {
 }
 
 @Composable
-fun MenuSection(model: SisComeViewModel) {
+fun MenuSection(state: HomeUiState, actions: HomeActions) {
     Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -88,55 +182,56 @@ fun MenuSection(model: SisComeViewModel) {
             Text("Selecciona servicios y paga todo junto. Agregar no cobra ni emite tickets.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        DateSelector(model)
-        ServiceSelector(model)
+        DateSelector(state.date, state.lines, actions.onSelectDate)
+        ServiceSelector(state, actions.onSelectService)
         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 AppIcon("calendar", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                Text("Consumo: ${dateLabel(model.date)} · ${model.service.hours}", style = MaterialTheme.typography.bodySmall)
+                Text("Consumo: ${dateLabel(state.date)} · ${state.service.hours}", style = MaterialTheme.typography.bodySmall)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 AppIcon("clock", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                Text("Venta hasta las ${model.service.saleEnd}", style = MaterialTheme.typography.bodySmall)
+                Text("Venta hasta las ${state.service.saleEnd}", style = MaterialTheme.typography.bodySmall)
             }
-            if (model.date == DemoCatalog.today) Text("Hora simulada: ${DemoCatalog.time}",
+            if (state.date == DemoCatalog.today) Text("Hora simulada: ${DemoCatalog.time}",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         HorizontalDivider()
-        val key = SelectionKey(model.date, model.service)
-        val owned = model.owned(key)
-        val pending = model.pending(key)
+        val key = SelectionKey(state.date, state.service)
+        val owned = state.ownedTickets[key]
+        val pending = state.pendingOperations[key]
         // El orden da prioridad al ticket y a operaciones pendientes; nunca ofrece volver a comprar una clave bloqueada.
         when {
-            owned != null -> OwnedTicketNotice(owned) { model.openTickets(owned.id) }
+            owned != null -> OwnedTicketNotice(owned, onQr = { actions.onOpenTicket(owned.id) },
+                onShowNext = if (state.hasNextAvailable) actions.onShowNextAvailable else null)
             pending != null -> {
                 Notice("Hay una operación pendiente", "${pending.reference}. Tu selección se conserva. Consulta la misma referencia; no pagues otra vez.", pending = true) {
-                    OutlinedButton(onClick = { model.show(Overlay.PaymentDetail(pending.reference)) }) { Text("Ver operación") }
+                    OutlinedButton(onClick = { actions.onShowPayment(pending.reference) }) { Text("Ver operación") }
                 }
             }
-            model.connection == Connection.LOADING || model.menuLoading -> MenuLoadingSkeleton()
-            model.connection != Connection.ONLINE -> {
-                Notice(if (model.connection == Connection.OFFLINE) "Datos guardados sin conexión" else "No se pudo consultar el menú",
+            state.connection == Connection.LOADING || state.menuLoading -> MenuLoadingSkeleton()
+            state.connection != Connection.ONLINE -> {
+                Notice(if (state.connection == Connection.OFFLINE) "Datos guardados sin conexión" else "No se pudo consultar el menú",
                     "La selección se conserva; el catálogo no está comprobado recientemente. No puedes iniciar un pago nuevo. Los tickets emitidos siguen accesibles.",
-                    pending = model.connection == Connection.OFFLINE, error = model.connection == Connection.SERVER) {
-                    Button(onClick = { model.connect(ConnectionFixture.NORMAL) }) { Text("Reintentar consulta") }
-                    TextButton(onClick = { model.navigate(Destination.TICKETS) }) { Text("Ver mis tickets") }
+                    pending = state.connection == Connection.OFFLINE, error = state.connection == Connection.SERVER) {
+                    Button(onClick = actions.onRetryConnection) { Text("Reintentar consulta") }
+                    TextButton(onClick = actions.onShowTickets) { Text("Ver mis tickets") }
                 }
             }
-            !DemoCatalog.published(model.date) -> EmptyState("Sin publicación", "No hay menú publicado para esta fecha. Elige una fecha con publicación.")
-            DemoCatalog.closed(key) -> SaleClosedNotice(model.service,
-                if (DemoCatalog.published("2026-10-08")) ({ model.selectDate("2026-10-08") }) else null)
-            model.unavailable(key) -> {
+            !DemoCatalog.published(state.date) -> EmptyState("Sin publicación", "No hay menú publicado para esta fecha. Elige una fecha con publicación.")
+            DemoCatalog.closed(key) -> SaleClosedNotice(state.service,
+                if (DemoCatalog.published("2026-10-08")) ({ actions.onSelectDate("2026-10-08") }) else null)
+            key in state.unavailableKeys -> {
                 Notice("Publicado, pero agotado en esta demo", "No se inició un pago para esta clave. Revisa y quita la línea afectada; el resto de la selección se conserva.", error = true) {
-                    if (model.records.lines.any { it.key == key }) OutlinedButton(onClick = { model.remove(key) }) { Text("Quitar línea agotada") }
+                    if (state.lines.any { it.key == key }) OutlinedButton(onClick = { actions.onRemoveLine(key) }) { Text("Quitar línea agotada") }
                 }
             }
-            else -> ContentArrival("${model.date}|${model.service}") {
-                DemoCatalog.variants(model.service).forEach { variant ->
-                    MenuVariantCard(variant, model.service.cents,
-                        model.records.lines.any { it.key == key && it.variant.id == variant.id }) { model.toggle(variant.id) }
+            else -> ContentArrival("${state.date}|${state.service}") {
+                DemoCatalog.variants(state.service).forEach { variant ->
+                    MenuVariantCard(variant, state.service.cents,
+                        state.lines.any { it.key == key && it.variant.id == variant.id }) { actions.onToggleVariant(variant.id) }
                 }
-                AvailabilityNotice(model.service)
+                AvailabilityNotice(state.service)
             }
         }
     }
@@ -144,11 +239,11 @@ fun MenuSection(model: SisComeViewModel) {
 }
 
 @Composable
-fun DateSelector(model: SisComeViewModel) {
+fun DateSelector(selectedDate: String, lines: List<SelectionLine>, onSelect: (String) -> Unit) {
     // El desplazamiento horizontal conserva todas las fechas; rememberScrollState recuerda la posición local.
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         DemoCatalog.dates.forEach { date ->
-            DateOptionItem(date, model.date == date.date, model.records.lines.count { it.date == date.date }) { model.selectDate(date.date) }
+            DateOptionItem(date, selectedDate == date.date, lines.count { it.date == date.date }) { onSelect(date.date) }
         }
     }
 }
@@ -160,7 +255,7 @@ fun DateOptionItem(date: PublishedDate, active: Boolean, count: Int, onSelect: (
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = Modifier.widthIn(min = 72.dp).heightIn(min = 48.dp).semantics {
             selected = active
-            stateDescription = "$count servicios seleccionados"
+            stateDescription = plural(count, "servicio seleccionado", "servicios seleccionados")
         }) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             // La insignia comparte la fila del día y reserva altura incluso vacía; no se superpone a texto ampliado.
@@ -177,7 +272,7 @@ fun DateOptionItem(date: PublishedDate, active: Boolean, count: Int, onSelect: (
 }
 
 @Composable
-fun ServiceSelector(model: SisComeViewModel) {
+fun ServiceSelector(state: HomeUiState, onSelect: (Service) -> Unit) {
     val fontScale = LocalDensity.current.fontScale
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -191,16 +286,16 @@ fun ServiceSelector(model: SisComeViewModel) {
                 val stacked = (maxWidth.value - 12f) / 3f / fontScale < 96f
                 val options: @Composable (Modifier) -> Unit = { itemModifier ->
                     Service.entries.forEach { service ->
-                        val key = SelectionKey(model.date, service)
-                        val state = when {
-                            model.owned(key) != null -> "Ticket emitido"
-                            model.pending(key) != null -> "Por resolver"
+                        val key = SelectionKey(state.date, service)
+                        val label = when {
+                            key in state.ownedTickets -> "Ticket emitido"
+                            key in state.pendingOperations -> "Por resolver"
                             DemoCatalog.closed(key) -> "Venta cerrada"
-                            model.unavailable(key) -> "Agotado"
-                            model.records.lines.any { it.key == key } -> "Seleccionado"
+                            key in state.unavailableKeys -> "Agotado"
+                            state.lines.any { it.key == key } -> "Seleccionado"
                             else -> service.hours
                         }
-                        ServiceOptionCard(service, state, model.service == service, DemoCatalog.closed(key), itemModifier) { model.selectService(service) }
+                        ServiceOptionCard(service, label, state.service == service, DemoCatalog.closed(key), itemModifier) { onSelect(service) }
                     }
                 }
                 if (stacked) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { options(Modifier.fillMaxWidth()) }
@@ -277,8 +372,9 @@ fun MenuVariantCard(variant: Variant, cents: Int, active: Boolean, onToggle: () 
 }
 
 @Composable
-fun OwnedTicketNotice(ticket: Ticket, onQr: () -> Unit) {
+fun OwnedTicketNotice(ticket: Ticket, onQr: () -> Unit, onShowNext: (() -> Unit)? = null) {
     // El estado poseído reúne la identidad y su acción; no es una variante seleccionable del menú.
+    // onShowNext es opcional: si no queda otra fecha/servicio por comprar, no se muestra el atajo.
     Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.small) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -291,6 +387,7 @@ fun OwnedTicketNotice(ticket: Ticket, onQr: () -> Unit) {
             }
             if (ticket.status == TicketStatus.AVAILABLE) OutlinedButton(onClick = onQr) { Text("Ver QR") }
             else Text(ticket.status.label)
+            if (onShowNext != null) TextButton(onClick = onShowNext) { Text("Ver próximo menú disponible") }
         }
     }
 }
@@ -336,7 +433,7 @@ fun MenuLoadingSkeleton() {
 }
 
 @Composable
-fun RecentActivitySection(model: SisComeViewModel) {
+fun RecentActivitySection(tickets: List<Ticket>, onOpenTicket: (String) -> Unit, onShowHistory: () -> Unit) {
     // La actividad usa el ticket almacenado, no la variante de la última compra ni el carrito actual.
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -344,13 +441,13 @@ fun RecentActivitySection(model: SisComeViewModel) {
                 Text("Actividad reciente", style = MaterialTheme.typography.titleLarge)
                 Text("Tus tickets más recientes.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            TextButton(onClick = { model.navigate(Destination.TICKETS) }) { Text("Ver historial") }
+            TextButton(onClick = onShowHistory) { Text("Ver historial") }
         }
-        if (model.records.tickets.isEmpty()) EmptyState("Aún no hay tickets", "Los tickets emitidos aparecerán aquí.")
-        model.records.tickets.sortedByDescending { it.issuedAt }.take(3).forEach { ticket ->
+        if (tickets.isEmpty()) EmptyState("Aún no hay tickets", "Los tickets emitidos aparecerán aquí.")
+        tickets.sortedByDescending { it.issuedAt }.take(3).forEach { ticket ->
             // Un separador delimita registros; no hace falta una tarjeta pesada por cada fila del historial breve.
             HorizontalDivider()
-            Surface(onClick = { model.openTickets(ticket.id) }, color = Color.Transparent, modifier = Modifier.fillMaxWidth()) {
+            Surface(onClick = { onOpenTicket(ticket.id) }, color = Color.Transparent, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {

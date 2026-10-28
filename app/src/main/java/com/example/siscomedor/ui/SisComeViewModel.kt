@@ -16,10 +16,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-enum class Destination(val label: String, val icon: String) {
-    HOME("Inicio", "home"), TICKETS("Mis tickets", "ticket"), PAYMENTS("Pagos", "card"),
-    WALLETS("Billeteras", "wallet"), ACCOUNT("Mi cuenta", "user")
-}
 enum class Connection(val label: String) {
     LOADING("Conectando…"), ONLINE("En línea"), OFFLINE("Sin conexión"), SERVER("Servicio no disponible")
 }
@@ -48,13 +44,13 @@ class SisComeViewModel(application: Application) : AndroidViewModel(application)
     private val session = DemoSession(includePaymentHistory = true)
     var records by mutableStateOf(SessionRecords(session.lines, session.tickets, session.operations))
         private set
-    var destination by mutableStateOf(Destination.HOME)
-        private set
     var overlay by mutableStateOf<Overlay?>(null)
         private set
-    var date by mutableStateOf(DemoCatalog.today)
+    // Inicio abre en el primer menú que todavía se puede comprar; si no queda ninguno, en la cena de hoy.
+    private val initialKey = nextAvailableKey() ?: SelectionKey(DemoCatalog.today, Service.DINNER)
+    var date by mutableStateOf(initialKey.date)
         private set
-    var service by mutableStateOf(Service.DINNER)
+    var service by mutableStateOf(initialKey.service)
         private set
     var menuLoading by mutableStateOf(false)
         private set
@@ -106,7 +102,10 @@ class SisComeViewModel(application: Application) : AndroidViewModel(application)
     // Los callbacks de red pueden venir de otro hilo; viewModelScope lleva las actualizaciones al hilo principal.
     private fun updateNetwork() {
         viewModelScope.launch {
-            networkAvailable = hasNetwork()
+            // onCapabilitiesChanged también llega por cambios de señal; solo se reconsulta si cambia la disponibilidad.
+            val available = hasNetwork()
+            if (available == networkAvailable) return@launch
+            networkAvailable = available
             if (!networkAvailable) {
                 connectionJob?.cancel()
                 connection = Connection.OFFLINE
@@ -129,10 +128,12 @@ class SisComeViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun navigate(target: Destination) {
-        if (processing) return
+    // La navegación vive en NavController; el ViewModel solo autoriza el cambio.
+    // Durante un pago no se cambia de pantalla; si se puede, se cierra la superposición abierta.
+    fun prepareNavigation(): Boolean {
+        if (processing) return false
         overlay = null
-        destination = target
+        return true
     }
 
     fun show(target: Overlay) {
@@ -151,6 +152,29 @@ class SisComeViewModel(application: Application) : AndroidViewModel(application)
 
     fun selectService(value: Service) {
         service = value
+        loadMenu()
+    }
+
+    // Primera fecha/servicio (en orden del catálogo) publicada, abierta y sin ticket, pago pendiente ni agotado.
+    private fun nextAvailableKey(): SelectionKey? {
+        for (publishedDate in DemoCatalog.dates) {
+            for (option in Service.entries) {
+                val key = SelectionKey(publishedDate.date, option)
+                val buyable = DemoCatalog.published(key.date) && !DemoCatalog.closed(key) &&
+                    session.owned(key) == null && session.pendingFor(key) == null && !session.unavailable(key)
+                if (buyable) return key
+            }
+        }
+        return null
+    }
+
+    val hasNextAvailable get() = nextAvailableKey() != null
+
+    // Atajo desde "Ya tienes este ticket": salta al próximo menú que sí se puede comprar.
+    fun showNextAvailable() {
+        val key = nextAvailableKey() ?: return
+        date = key.date
+        service = key.service
         loadMenu()
     }
 

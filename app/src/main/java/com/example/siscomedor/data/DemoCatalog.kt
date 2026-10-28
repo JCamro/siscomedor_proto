@@ -9,6 +9,9 @@ object DemoCatalog {
     const val wallet = "Billetera Demo ···· 2841"
     val wallets = listOf(wallet, "Billetera Demo ···· 7390")
     const val student = "Brayan Motta Medina"
+    // Credenciales ficticias del login de demostración (no es autenticación real).
+    const val demoCode = "20240001"
+    const val demoPassword = "comedor123"
     val dates = listOf(
         PublishedDate(today, "HOY", true),
         PublishedDate("2026-10-08", "JUE", true),
@@ -48,8 +51,9 @@ object DemoCatalog {
         line.variant in variants(line.service) && line.cents == line.service.cents
 
     // El historial inicial es independiente del carrito y se restaura al reiniciar el proceso.
+    // El ticket vigente es de cena: a la hora simulada (16:40) el almuerzo de hoy ya terminó.
     val tickets = listOf(
-        Ticket("SC-2026-1048", line(today, Service.LUNCH, "traditional"), TicketStatus.AVAILABLE, "7 oct 2026 · 11:42"),
+        Ticket("SC-2026-1048", line(today, Service.DINNER, "traditional"), TicketStatus.AVAILABLE, "7 oct 2026 · 11:42"),
         Ticket("SC-2026-0924", line("2026-10-02", Service.LUNCH, "traditional"), TicketStatus.CONSUMED, "2 oct 2026 · 11:48")
     )
     val payments = listOf(
