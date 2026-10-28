@@ -19,6 +19,13 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 
 APK output: `app/build/outputs/apk/debug/app-debug.apk`. No emulator or connected-device execution was performed during implementation.
 
+## Navigation and login (Lab 5)
+
+- `navigation-compose` 2.9.5 (version catalog). `ui/navigation/Routes.kt` defines string routes: `login` (start), `home`, `tickets`, `tickets/{ticketId}` (list-detail), `payments`, `wallets`, `account`.
+- `SisComeApp` hosts a `NavHost`; the bottom bar/rail reads `currentBackStackEntryAsState` and navigates with `popUpTo(home){saveState}`, `launchSingleTop`, `restoreState`. Bars are hidden on login. Navigation is blocked while a payment is processing.
+- `ui/login/LoginScreen.kt`: university code (8 digits), password (min 6, show/hide), "Recordar mi código" switch, "Ingresar" enabled only when valid. Pure rules in `domain/LoginValidation.kt`, tested by `LoginValidationTest`.
+- Demo credentials (fictitious): code `20240001`, password `comedor123`.
+
 ## Modules and behavior
 
 | Module | Responsibility |
@@ -94,6 +101,8 @@ Owned Kotlin application sources contain neutral Spanish educational comments; i
 3. `ui/SisComeViewModel.kt`: shared observable state versus local `remember`/`rememberSaveable`, lifecycle-bound coroutines, cancellation, guarded confirmation and same-reference query.
 4. `ui/components/Components.kt`, `ui/home/`, `ui/selection/`, `ui/checkout/`, `ui/payments/`, `ui/tickets/`: layout weights, scalable controls, accessibility semantics, loading/offline states, dialog framing and independent payment/issuance outcomes.
 5. `domain/DemoQr.kt`, `domain/QrRefreshState.kt`, `ui/tickets/QrExport.kt`: deterministic saved identity, read-only expiry guards, document-picker authorization, IO dispatching, stream closure and bitmap cleanup.
+
+Screens follow a container/stateless split: `HomeScreen`, `MyTicketsScreen`, `PaymentsScreen`, `SelectionSummaryPanel` and `CheckoutDialog` read the ViewModel and pass plain values and lambdas to `HomeContent`, `TicketsContent`, `PaymentsContent`, `SelectionSummaryContent` and `CheckoutReviewContent`. Compose `@Preview`s (Interactive Mode friendly, built from `DemoCatalog`/`DemoSession`, no ViewModel or network) live next to each feature in `*Previews.kt` files: `ui/home/HomePreviews.kt`, `ui/tickets/TicketsPreviews.kt`, `ui/payments/PaymentsPreviews.kt`, `ui/selection/SelectionPreviews.kt`, `ui/checkout/CheckoutPreviews.kt` and `ui/components/ComponentsPreviews.kt`.
 
 Comments explain meaningful blocks rather than imports, braces or every assignment. Unit tests demonstrate domain rules; source-contract assertions guard wiring, not rendered pixels.
 

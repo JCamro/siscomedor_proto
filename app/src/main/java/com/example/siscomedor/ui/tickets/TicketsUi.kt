@@ -30,21 +30,49 @@ import com.example.siscomedor.ui.components.*
 import kotlinx.coroutines.launch
 
 @Composable
-fun MyTicketsScreen(model: SisComeViewModel) {
+fun MyTicketsScreen(model: SisComeViewModel, onOpenTicket: (String) -> Unit) {
+    // Contenedor ("props down, events up"): lee el ViewModel y conecta acciones. TicketsContent
+    // solo recibe valores y lambdas, sin ViewModel, por eso se puede abrir en Preview.
+    // onOpenTicket navega a la ruta "tickets/{ticketId}" (patrón lista-detalle).
+    TicketsContent(
+        tickets = model.records.tickets,
+        filter = model.ticketFilter,
+        onFilterChange = { model.ticketFilter = it },
+        onOpenTicket = onOpenTicket
+    )
+}
+
+@Composable
+fun TicketDetailScreen(ticketId: String, model: SisComeViewModel, onBack: () -> Unit) {
+    // Destino de navegación: recibe el id como argumento de ruta y busca el ticket en los registros.
+    val ticket = model.records.tickets.firstOrNull { it.id == ticketId }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        TextButton(onClick = onBack) { Text("‹ Volver a Mis tickets") }
+        if (ticket == null) {
+            EmptyState("Ticket no encontrado", "El registro $ticketId no existe en esta sesión de demostración.")
+        } else {
+            PageTitle("Ticket de ${ticket.line.service.label.lowercase()}", ticket.id)
+            TicketDetailBody(ticket, model, null)
+        }
+    }
+}
+
+@Composable
+fun TicketsContent(tickets: List<Ticket>, filter: TicketStatus?, onFilterChange: (TicketStatus?) -> Unit, onOpenTicket: (String) -> Unit) {
     // La lista deriva del registro emitido; filtrar no altera estado, identidad ni disponibilidad de los tickets.
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         PageTitle("Mis tickets", "Consulta tus servicios por fecha de consumo.")
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            TicketSummaryCard("Disponibles", model.availableTickets.size, Modifier.weight(1f), true)
-            TicketSummaryCard("Consumidos", model.records.tickets.count { it.status == TicketStatus.CONSUMED }, Modifier.weight(1f), false)
+            TicketSummaryCard("Disponibles", tickets.count { it.status == TicketStatus.AVAILABLE }, Modifier.weight(1f), true)
+            TicketSummaryCard("Consumidos", tickets.count { it.status == TicketStatus.CONSUMED }, Modifier.weight(1f), false)
         }
         // Filtros y registros forman una sola región; el espacio entre regiones es mayor que entre filas.
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            TicketFilterBar(model.ticketFilter) { model.ticketFilter = it }
-            val filtered = model.records.tickets.filter { model.ticketFilter == null || it.status == model.ticketFilter }
+            TicketFilterBar(filter, onFilterChange)
+            val filtered = tickets.filter { filter == null || it.status == filter }
                 .sortedWith(compareBy({ it.line.date }, { it.line.service.ordinal }))
             if (filtered.isEmpty()) EmptyState("No hay tickets en este estado", "Prueba otro filtro. Estos registros no están sincronizados con una institución.")
-            filtered.forEach { TicketCard(it) { model.openTickets(it.id) } }
+            filtered.forEach { ticket -> TicketCard(ticket) { onOpenTicket(ticket.id) } }
         }
         Text("Los códigos guardados se pueden abrir y descargar sin conexión. No acreditan ingreso ni vigencia institucional.", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -125,6 +153,14 @@ fun TicketPickerDialog(model: SisComeViewModel, operationReference: String? = nu
 
 @Composable
 fun TicketDetailDialog(ticket: Ticket, model: SisComeViewModel, operationReference: String? = null) {
+    AppDialog("Ticket de ${ticket.line.service.label.lowercase()}", model::closeOverlay) {
+        TicketDetailBody(ticket, model, operationReference)
+    }
+}
+
+// Contenido compartido por el diálogo (desde Inicio/compra) y la pantalla de la ruta tickets/{ticketId}.
+@Composable
+fun ColumnScope.TicketDetailBody(ticket: Ticket, model: SisComeViewModel, operationReference: String?) {
     val context = LocalContext.current
     // El alcance local se cancela al salir del detalle; rememberSaveable conserva el identificador durante el selector de archivos.
     val scope = rememberCoroutineScope()
@@ -146,7 +182,7 @@ fun TicketDetailDialog(ticket: Ticket, model: SisComeViewModel, operationReferen
             exportId = null
         }
     }
-    AppDialog("Ticket de ${ticket.line.service.label.lowercase()}", model::closeOverlay) {
+    run {
         if (model.pickerTickets(operationReference).size > 1) {
             TextButton(onClick = { model.show(Overlay.TicketPicker(operationReference)) }) {
                 Text(if (operationReference == null) "Todos los tickets disponibles" else "Tickets de esta operación")
